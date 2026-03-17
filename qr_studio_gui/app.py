@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import copy
 from dataclasses import fields
 from pathlib import Path
 from typing import Any, Dict, Optional
 
 import tkinter as tk
-from tkinter import colorchooser, filedialog, messagebox
+from tkinter import colorchooser, filedialog, messagebox, simpledialog
 
 try:
     import customtkinter as ctk
@@ -17,7 +18,14 @@ except ModuleNotFoundError as exc:
 from PIL import Image
 
 from generate_qrcode import BrandedQRGenerator, create_qr_config
-from qr_presets import GraphicConfig, get_preset_graphic_config, list_presets
+from qr_presets import (
+    GraphicConfig,
+    apply_graphic_overrides,
+    get_preset_graphic_config,
+    list_presets,
+    load_graphic_preset,
+    save_graphic_preset,
+)
 from qr_studio_gui.metadata import GROUP_ORDER, get_field_spec
 from qr_studio_gui.tooltips import ToolTip
 
@@ -29,6 +37,14 @@ except ModuleNotFoundError:
 
 STYLE_MODE_VALUES = ["black_bg_safe", "full_dark_artistic", "white_clean"]
 OPTIONAL_TUPLE_FIELDS = {"gradient_mix_base_rgb"}
+LEFT_PANEL_WEIGHT = 7
+RIGHT_PANEL_WEIGHT = 5
+LEFT_PANEL_MIN_WIDTH = 540
+RIGHT_PANEL_MIN_WIDTH = 360
+WINDOW_MIN_WIDTH = 1120
+WINDOW_MIN_HEIGHT = 760
+RIGHT_PANEL_RATIO_MIN = 0.28
+RIGHT_PANEL_RATIO_MAX = 0.62
 
 
 class QrStudioApp:
@@ -36,13 +52,24 @@ class QrStudioApp:
         self.root = root
         self.root.title("QR Studio Pro")
         self.root.geometry("1600x940")
-        self.root.minsize(1260, 760)
+        self.root.minsize(WINDOW_MIN_WIDTH, WINDOW_MIN_HEIGHT)
 
         ctk.set_appearance_mode("dark")
         ctk.set_default_color_theme("green")
 
+        self._builtin_preset_names = list_presets()
+        self._custom_presets: Dict[str, Dict[str, Any]] = {}
+
+        initial_preset = "black_bg_safe"
+        if initial_preset not in self._builtin_preset_names and self._builtin_preset_names:
+            initial_preset = self._builtin_preset_names[0]
+
         self.url_var = tk.StringVar(value="https://phusis.io/")
-        self.preset_var = tk.StringVar(value="black_bg_safe")
+        self.preset_var = tk.StringVar(value=initial_preset)
+        self.preview_split_ratio_var = tk.DoubleVar(
+            value=RIGHT_PANEL_WEIGHT / max(1.0, (LEFT_PANEL_WEIGHT + RIGHT_PANEL_WEIGHT))
+        )
+        self.preview_split_text_var = tk.StringVar()
         self.logo_var = tk.StringVar(value=self._default_logo_path())
         self.output_var = tk.StringVar(value="generated_qrcode/qr_output.png")
         self.box_size_var = tk.StringVar(value="22")
@@ -76,6 +103,7 @@ class QrStudioApp:
         self.full_dark_hint_label: Optional[ctk.CTkLabel] = None
 
         self._build_ui()
+        self._apply_layout_split_ratio(self.preview_split_ratio_var.get())
         self._load_preset(self.preset_var.get())
         self._register_var_watchers()
 
@@ -92,8 +120,18 @@ class QrStudioApp:
     # ------------------------------------------------------------------
 
     def _build_ui(self) -> None:
-        self.root.grid_columnconfigure(0, weight=5, minsize=480, uniform="layout")
-        self.root.grid_columnconfigure(1, weight=7, minsize=520, uniform="layout")
+        self.root.grid_columnconfigure(
+            0,
+            weight=LEFT_PANEL_WEIGHT,
+            minsize=LEFT_PANEL_MIN_WIDTH,
+            uniform="layout",
+        )
+        self.root.grid_columnconfigure(
+            1,
+            weight=RIGHT_PANEL_WEIGHT,
+            minsize=RIGHT_PANEL_MIN_WIDTH,
+            uniform="layout",
+        )
         self.root.grid_rowconfigure(0, weight=1)
 
         self.left_panel = ctk.CTkFrame(self.root, corner_radius=16)
@@ -133,7 +171,7 @@ class QrStudioApp:
         self.preset_menu = ctk.CTkOptionMenu(
             basics,
             variable=self.preset_var,
-            values=list_presets(),
+            values=self._all_preset_names(),
             command=self._on_preset_changed,
             width=220,
             dynamic_resizing=False,
@@ -150,10 +188,11 @@ class QrStudioApp:
         self.tooltips.append(ToolTip(self.preset_menu, "Thème graphique prédéfini à appliquer"))
         self.tooltips.append(ToolTip(reload_btn, "Réinitialise les paramètres graphiques au preset sélectionné"))
 
-        self._add_logo_row(basics, row=2)
-        self._add_output_row(basics, row=3)
-        self._add_qr_technical_row(basics, row=4)
-        self._add_export_row(basics, row=5)
+        self._add_preset_io_row(basics, row=2)
+        self._add_logo_row(basics, row=3)
+        self._add_output_row(basics, row=4)
+        self._add_qr_technical_row(basics, row=5)
+        self._add_export_row(basics, row=6)
 
         self.drop_zone = ctk.CTkLabel(
             basics,
@@ -163,7 +202,7 @@ class QrStudioApp:
             text_color=("#1f2937", "#d1d5db"),
             height=36,
         )
-        self.drop_zone.grid(row=6, column=0, columnspan=3, sticky="ew", padx=12, pady=(4, 10))
+        self.drop_zone.grid(row=7, column=0, columnspan=3, sticky="ew", padx=12, pady=(4, 10))
         self.tooltips.append(ToolTip(self.drop_zone, "Glissez-déposez un fichier image ici pour l'utiliser comme logo"))
 
         actions = ctk.CTkFrame(parent, corner_radius=12)
@@ -197,6 +236,22 @@ class QrStudioApp:
 
         for col in range(5):
             actions.grid_columnconfigure(col, weight=1)
+
+        split_label = ctk.CTkLabel(actions, text="Preview Width", anchor="w")
+        split_label.grid(row=1, column=0, sticky="w", padx=12, pady=(0, 10))
+        split_slider = ctk.CTkSlider(
+            actions,
+            from_=RIGHT_PANEL_RATIO_MIN,
+            to=RIGHT_PANEL_RATIO_MAX,
+            number_of_steps=34,
+            variable=self.preview_split_ratio_var,
+            command=self._on_split_ratio_changed,
+        )
+        split_slider.grid(row=1, column=1, columnspan=3, sticky="ew", padx=(0, 8), pady=(0, 10))
+        split_value = ctk.CTkLabel(actions, textvariable=self.preview_split_text_var, width=52, anchor="e")
+        split_value.grid(row=1, column=4, sticky="e", padx=(6, 12), pady=(0, 10))
+        self.tooltips.append(ToolTip(split_label, "Ajuste la largeur relative de la zone Live Preview"))
+        self.tooltips.append(ToolTip(split_slider, "Ajuste la largeur relative de la zone Live Preview"))
 
         config_card = ctk.CTkFrame(parent, corner_radius=12)
         config_card.grid(row=3, column=0, sticky="nsew", padx=12, pady=(0, 12))
@@ -344,6 +399,33 @@ class QrStudioApp:
         self.tooltips.append(ToolTip(output_label, "Chemin de sortie du fichier QR généré"))
         self.tooltips.append(ToolTip(self.output_entry, "Chemin de sortie du fichier QR généré"))
         self.tooltips.append(ToolTip(choose_btn, "Choisir l'emplacement de sauvegarde"))
+
+    def _add_preset_io_row(self, parent: ctk.CTkFrame, row: int) -> None:
+        io_label = ctk.CTkLabel(parent, text="Preset IO", anchor="w")
+        io_label.grid(row=row, column=0, sticky="w", padx=12, pady=7)
+
+        button_row = ctk.CTkFrame(parent, fg_color="transparent")
+        button_row.grid(row=row, column=1, columnspan=2, sticky="ew", padx=(6, 12), pady=7)
+        button_row.grid_columnconfigure(0, weight=1)
+        button_row.grid_columnconfigure(1, weight=1)
+
+        import_btn = ctk.CTkButton(
+            button_row,
+            text="Import JSON",
+            command=self._import_preset_from_file,
+        )
+        import_btn.grid(row=0, column=0, sticky="ew", padx=(0, 6))
+
+        save_btn = ctk.CTkButton(
+            button_row,
+            text="Save Preset",
+            command=self._save_current_as_preset,
+        )
+        save_btn.grid(row=0, column=1, sticky="ew", padx=(6, 0))
+
+        self.tooltips.append(ToolTip(io_label, "Importer un preset JSON ou sauvegarder la config courante"))
+        self.tooltips.append(ToolTip(import_btn, "Importe un preset JSON puis l'ajoute à la liste des presets"))
+        self.tooltips.append(ToolTip(save_btn, "Sauvegarde les paramètres courants en preset JSON"))
 
     def _add_qr_technical_row(self, parent: ctk.CTkFrame, row: int) -> None:
         tech_label = ctk.CTkLabel(parent, text="QR Tech", anchor="w")
@@ -690,10 +772,12 @@ class QrStudioApp:
 
         box_size = self._parse_positive_int(self.box_size_var.get(), "box_size")
         border = self._parse_positive_int(self.border_var.get(), "border")
+        selected_preset = self.preset_var.get().strip()
+        base_preset = selected_preset if selected_preset in self._builtin_preset_names else None
 
         return create_qr_config(
             url=url,
-            preset_name=self.preset_var.get().strip() or None,
+            preset_name=base_preset,
             logo_path=self._resolve_logo_path(),
             output_path=Path(output),
             box_size=box_size,
@@ -820,6 +904,35 @@ class QrStudioApp:
             except Exception:
                 pass
 
+    def _on_split_ratio_changed(self, value: float) -> None:
+        ratio = max(RIGHT_PANEL_RATIO_MIN, min(RIGHT_PANEL_RATIO_MAX, float(value)))
+        if abs(ratio - float(self.preview_split_ratio_var.get())) > 1e-6:
+            self.preview_split_ratio_var.set(ratio)
+        self._apply_layout_split_ratio(ratio)
+
+    def _apply_layout_split_ratio(self, right_ratio: float) -> None:
+        ratio = max(RIGHT_PANEL_RATIO_MIN, min(RIGHT_PANEL_RATIO_MAX, float(right_ratio)))
+        left_ratio = 1.0 - ratio
+        left_weight = max(1, int(round(left_ratio * 100)))
+        right_weight = max(1, int(round(ratio * 100)))
+
+        self.root.grid_columnconfigure(
+            0,
+            weight=left_weight,
+            minsize=LEFT_PANEL_MIN_WIDTH,
+            uniform="layout",
+        )
+        self.root.grid_columnconfigure(
+            1,
+            weight=right_weight,
+            minsize=RIGHT_PANEL_MIN_WIDTH,
+            uniform="layout",
+        )
+        self.preview_split_text_var.set(f"{int(round(ratio * 100))}%")
+
+        if not self._layout_lock_active:
+            self._schedule_preview_resize()
+
     def _render_preview(self, show_errors: bool) -> None:
         try:
             cfg = self._build_runtime_config()
@@ -919,6 +1032,117 @@ class QrStudioApp:
     # Presets + auto preview
     # ------------------------------------------------------------------
 
+    def _all_preset_names(self) -> list[str]:
+        return self._builtin_preset_names + sorted(self._custom_presets.keys())
+
+    @staticmethod
+    def _normalize_preset_name(raw_name: str) -> str:
+        cleaned = "".join(ch if ch.isalnum() or ch in {"-", "_"} else "_" for ch in raw_name.strip())
+        cleaned = cleaned.strip("_")
+        return cleaned or "custom_preset"
+
+    def _make_unique_preset_name(self, base_name: str) -> str:
+        candidate = base_name
+        existing = set(self._all_preset_names())
+        if candidate not in existing:
+            return candidate
+
+        idx = 2
+        while f"{candidate}_{idx}" in existing:
+            idx += 1
+        return f"{candidate}_{idx}"
+
+    def _refresh_preset_menu(self, select_name: Optional[str] = None) -> None:
+        values = self._all_preset_names()
+        self.preset_menu.configure(values=values)
+        if not values:
+            return
+
+        current = self.preset_var.get().strip()
+        target = select_name if select_name in values else current
+        if target not in values:
+            target = values[0]
+        self.preset_var.set(target)
+
+    def _resolve_preset_config(self, preset_name: str) -> GraphicConfig:
+        if preset_name in self._custom_presets:
+            cfg = GraphicConfig()
+            return apply_graphic_overrides(cfg, copy.deepcopy(self._custom_presets[preset_name]))
+        return get_preset_graphic_config(preset_name)
+
+    def _import_preset_from_file(self) -> None:
+        selected = filedialog.askopenfilename(
+            title="Importer un preset JSON",
+            filetypes=[("Preset JSON", "*.json"), ("JSON", "*.json"), ("All", "*.*")],
+        )
+        if not selected:
+            return
+
+        try:
+            imported_name, overrides = load_graphic_preset(Path(selected))
+            # Validate before storing
+            apply_graphic_overrides(GraphicConfig(), copy.deepcopy(overrides))
+        except Exception as exc:
+            self._set_status(f"Import preset failed: {exc}", is_error=True)
+            messagebox.showerror("Import preset", str(exc))
+            return
+
+        base_name = imported_name or Path(selected).stem
+        preset_name = self._make_unique_preset_name(self._normalize_preset_name(base_name))
+        self._custom_presets[preset_name] = copy.deepcopy(overrides)
+        self._refresh_preset_menu(select_name=preset_name)
+        self._load_preset(preset_name)
+        self._set_status(f"Preset imported: {preset_name}")
+
+    def _save_current_as_preset(self) -> None:
+        try:
+            overrides = self._collect_graphic_overrides()
+        except Exception as exc:
+            self._set_status(f"Preset save failed: {exc}", is_error=True)
+            messagebox.showerror("Save preset", str(exc))
+            return
+
+        suggested_name = self._normalize_preset_name(self.preset_var.get() or "custom_preset")
+        raw_name = simpledialog.askstring(
+            "Save preset",
+            "Nom du preset:",
+            initialvalue=suggested_name,
+            parent=self.root,
+        )
+        if raw_name is None:
+            return
+
+        preset_name = self._make_unique_preset_name(self._normalize_preset_name(raw_name))
+        default_dir = Path("qr_custom_presets")
+        default_file = f"{preset_name}.json"
+        selected = filedialog.asksaveasfilename(
+            title="Sauvegarder le preset JSON",
+            initialdir=str(default_dir),
+            initialfile=default_file,
+            defaultextension=".json",
+            filetypes=[("Preset JSON", "*.json"), ("JSON", "*.json"), ("All", "*.*")],
+        )
+        if not selected:
+            return
+
+        selected_preset = self.preset_var.get().strip()
+        base_preset = selected_preset if selected_preset in self._builtin_preset_names else None
+        try:
+            save_graphic_preset(
+                path=Path(selected),
+                preset_name=preset_name,
+                graphic_overrides=overrides,
+                base_preset=base_preset,
+            )
+        except Exception as exc:
+            self._set_status(f"Preset save failed: {exc}", is_error=True)
+            messagebox.showerror("Save preset", str(exc))
+            return
+
+        self._custom_presets[preset_name] = copy.deepcopy(overrides)
+        self._refresh_preset_menu(select_name=preset_name)
+        self._set_status(f"Preset saved: {preset_name}")
+
     def _on_preset_changed(self, _choice: str) -> None:
         self._load_preset(self.preset_var.get())
         self._set_status(f"Preset loaded: {self.preset_var.get()}")
@@ -968,7 +1192,7 @@ class QrStudioApp:
                 )
 
     def _load_preset(self, preset_name: str) -> None:
-        preset_cfg = get_preset_graphic_config(preset_name)
+        preset_cfg = self._resolve_preset_config(preset_name)
 
         self._suspend_auto_preview = True
         try:

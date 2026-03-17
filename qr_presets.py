@@ -198,7 +198,52 @@ def get_preset_graphic_config(preset_name: Optional[str]) -> GraphicConfig:
 
 
 def load_graphic_overrides(path: Path) -> Dict[str, Any]:
+    _, overrides = load_graphic_preset(path)
+    return overrides
+
+
+def _jsonify_value(value: Any) -> Any:
+    if isinstance(value, tuple):
+        return list(value)
+    return value
+
+
+def save_graphic_preset(
+    path: Path,
+    preset_name: str,
+    graphic_overrides: Dict[str, Any],
+    base_preset: Optional[str] = None,
+) -> Path:
+    payload: Dict[str, Any] = {
+        "format_version": 1,
+        "name": preset_name,
+        "graphic_overrides": {k: _jsonify_value(v) for k, v in graphic_overrides.items()},
+    }
+    if base_preset:
+        payload["base_preset"] = base_preset
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    return path
+
+
+def load_graphic_preset(path: Path) -> tuple[Optional[str], Dict[str, Any]]:
     data = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(data, dict):
-        raise ValueError("Le fichier de config graphique doit contenir un objet JSON")
-    return data
+        raise ValueError("Le fichier preset doit contenir un objet JSON")
+
+    # Preferred envelope format
+    if "graphic_overrides" in data:
+        overrides = data.get("graphic_overrides")
+        if not isinstance(overrides, dict):
+            raise ValueError("'graphic_overrides' doit etre un objet JSON")
+        name = data.get("name")
+        if name is not None and not isinstance(name, str):
+            raise ValueError("'name' doit etre une chaine")
+        return name, overrides
+
+    # Backward-compatible flat override format
+    return None, data
