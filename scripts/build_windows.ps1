@@ -18,6 +18,7 @@ $args = @(
     "--noconfirm",
     "--clean",
     "--windowed",
+    "--onefile",
     "--name", "QRStudioPro",
     "--collect-all", "customtkinter",
     "--collect-all", "tkinterdnd2",
@@ -33,4 +34,4 @@ if (Test-Path $iconIco) {
 
 Write-Host ""
 Write-Host "Build terminé."
-Write-Host "Executable: dist/QRStudioPro/QRStudioPro.exe"
+Write-Host "Executable: dist/QRStudioPro.exe"

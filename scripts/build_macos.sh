@@ -31,6 +31,15 @@ fi
 
 "$PYTHON_EXE" "${ARGS[@]}"
 
+DMG_PATH="dist/QRStudioPro-macos.dmg"
+hdiutil create \
+  -volname "QRStudioPro" \
+  -srcfolder "dist/QRStudioPro.app" \
+  -ov \
+  -format UDZO \
+  "$DMG_PATH"
+
 echo ""
 echo "Build termine."
 echo "Application: dist/QRStudioPro.app"
+echo "DMG: $DMG_PATH"

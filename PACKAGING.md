@@ -35,7 +35,7 @@ Dans PowerShell:
 ```
 
 Sortie:
-- `dist/QRStudioPro/QRStudioPro.exe`
+- `dist/QRStudioPro.exe`
 
 ## 4) Build macOS (.app)
 
@@ -47,6 +47,7 @@ Sur macOS:
 
 Sortie:
 - `dist/QRStudioPro.app`
+- `dist/QRStudioPro-macos.dmg`
 
 ## 5) Notes importantes
 
@@ -65,5 +66,7 @@ Workflow inclus: `.github/workflows/desktop-build-release.yml`
 
 - `workflow_dispatch`: build manuel Windows + macOS avec artifacts.
 - `push` de tag `v*`: build puis création d'une GitHub Release avec:
-  - `QRStudioPro-windows.zip`
-  - `QRStudioPro-macos.zip`
+  - `QRStudioPro.exe`
+  - `QRStudioPro-macos.dmg`
+
+Note: GitHub ajoute toujours automatiquement `Source code (zip)` et `Source code (tar.gz)` dans chaque release.
