@@ -52,6 +52,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Desactive la verification OpenCV du QR genere",
     )
     parser.add_argument(
+        "--logo-keep-original",
+        action="store_true",
+        help="Conserve le logo tel quel (pas de recolor / pas de suppression de fond)",
+    )
+    parser.add_argument(
         "--quiet",
         action="store_true",
         help="Desactive les logs de generation",
@@ -82,6 +87,10 @@ def main() -> int:
     graphic_overrides = None
     if args.graphic_config:
         graphic_overrides = load_graphic_overrides(Path(args.graphic_config))
+    if args.logo_keep_original:
+        if graphic_overrides is None:
+            graphic_overrides = {}
+        graphic_overrides["logo_keep_original"] = True
 
     from generate_qrcode import BrandedQRGenerator, create_qr_config
 

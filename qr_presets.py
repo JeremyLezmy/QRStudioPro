@@ -44,6 +44,8 @@ class GraphicConfig:
     logo_remove_dark_bg: bool = True
     logo_dark_bg_threshold: int = 18
     recolor_logo: bool = True
+    # If enabled, keep original colors/alpha and skip destructive logo preprocessing.
+    logo_keep_original: bool = False
     recolor_logo_start_rgb: Color3 = (38, 170, 150)
     recolor_logo_end_rgb: Color3 = (70, 120, 165)
 
@@ -144,7 +146,8 @@ PRESET_OVERRIDES: Dict[str, Dict[str, Any]] = {
         "gradient_mix_ratio": 0.45,
         "finder_outer_rgb": (77, 88, 82),
         "finder_center_rgb": (165, 124, 100),
-        "recolor_logo": True,
+        "recolor_logo": False,
+        "logo_keep_original": True,
         "recolor_logo_start_rgb": (108, 135, 122),
         "recolor_logo_end_rgb": (175, 139, 114),
         "medallion_fill_rgba": (252, 248, 243, 255),

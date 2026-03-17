@@ -1,3 +1,6 @@
 env_qrcode/*
 env_qrcode
 generated_qrcode
+
+__pycache__/*
+__pycache__

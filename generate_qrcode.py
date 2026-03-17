@@ -131,6 +131,14 @@ class BrandedQRGenerator:
         img = Image.open(self.cfg.logo_path).convert("RGBA")
         arr = np.array(img)
 
+        if self.g.logo_keep_original:
+            logo = Image.fromarray(arr, "RGBA")
+            scale = target_w / max(logo.size)
+            return logo.resize(
+                (max(1, int(logo.width * scale)), max(1, int(logo.height * scale))),
+                Image.LANCZOS,
+            )
+
         if self.g.logo_remove_dark_bg:
             rgb = arr[:, :, :3].astype(np.int16)
             dark = np.max(rgb, axis=2) < self.g.logo_dark_bg_threshold
