@@ -71,6 +71,21 @@ FIELD_SPECS: Dict[str, FieldSpec] = {
         "Valeur typique : 0.4–0.6.",
         "Modules",
     ),
+    "module_shape": FieldSpec(
+        "Module Shape",
+        "Forme des modules internes du QR: square, rounded, ou dot.",
+        "Modules",
+    ),
+    "module_scale": FieldSpec(
+        "Module Scale",
+        "Taille relative des modules (1.0 = pleine case, <1.0 = plus petit et plus aéré).",
+        "Modules",
+    ),
+    "module_corner_ratio": FieldSpec(
+        "Corner Ratio",
+        "Rayon des coins pour les modules rounded (0.0 carré, 1.0 très arrondi).",
+        "Modules",
+    ),
     "finder_outer_rgb": FieldSpec(
         "Finder Outer",
         "Couleur des bords externes des 3 marqueurs de coin (carrés de repérage). "

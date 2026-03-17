@@ -94,6 +94,17 @@ class BrandedQRGenerator:
         self.modules = self.qr.modules_count
         self.cell = self.w // (self.modules + 2 * self.cfg.border)
         self.offset = self.cfg.border * self.cell
+        self._finder_regions_modules = [
+            (0, 0),
+            (self.modules - 7, 0),
+            (0, self.modules - 7),
+        ]
+        self._finder_module_set = {
+            (mx, my)
+            for fx, fy in self._finder_regions_modules
+            for my in range(fy, fy + 7)
+            for mx in range(fx, fx + 7)
+        }
 
     @property
     def g(self) -> GraphicConfig:
@@ -125,6 +136,76 @@ class BrandedQRGenerator:
     def _debug(self, *args):
         if self.cfg.verbose:
             print(*args)
+
+    @staticmethod
+    def _clamp01(value: float) -> float:
+        return max(0.0, min(1.0, float(value)))
+
+    def _needs_custom_module_render(self) -> bool:
+        shape = str(self.g.module_shape).strip().lower()
+        scale = float(self.g.module_scale)
+        return shape in {"rounded", "dot"} or abs(scale - 1.0) > 1e-6
+
+    def _draw_module_shape(
+        self,
+        draw: ImageDraw.ImageDraw,
+        bbox: Tuple[float, float, float, float],
+        fill: Tuple[int, int, int, int],
+    ) -> None:
+        shape = str(self.g.module_shape).strip().lower()
+
+        if shape == "dot":
+            draw.ellipse(bbox, fill=fill)
+            return
+
+        if shape == "rounded":
+            width = max(1.0, bbox[2] - bbox[0])
+            corner_ratio = self._clamp01(float(self.g.module_corner_ratio))
+            radius = max(1, int((width / 2.0) * corner_ratio))
+            draw.rounded_rectangle(bbox, radius=radius, fill=fill)
+            return
+
+        draw.rectangle(bbox, fill=fill)
+
+    def _render_modules_custom(
+        self,
+        background_rgba: Tuple[int, int, int, int],
+        gradient: np.ndarray,
+        transparent_white_bg: bool = False,
+    ) -> Image.Image:
+        out = Image.new("RGBA", (self.w, self.h), background_rgba)
+        draw = ImageDraw.Draw(out, "RGBA")
+
+        scale = max(0.2, min(1.25, float(self.g.module_scale)))
+        draw_size = self.cell * scale
+        pad = (self.cell - draw_size) / 2.0
+
+        for my in range(self.modules):
+            for mx in range(self.modules):
+                if not self.qr.modules[my][mx]:
+                    continue
+                if (mx, my) in self._finder_module_set:
+                    continue
+
+                x0 = self.offset + mx * self.cell + pad
+                y0 = self.offset + my * self.cell + pad
+                x1 = x0 + draw_size
+                y1 = y0 + draw_size
+
+                cx = int((x0 + x1) / 2)
+                cy = int((y0 + y1) / 2)
+                cx = max(0, min(self.w - 1, cx))
+                cy = max(0, min(self.h - 1, cy))
+                r, g, b = gradient[cy, cx]
+
+                self._draw_module_shape(draw, (x0, y0, x1, y1), (int(r), int(g), int(b), 255))
+
+        arr = np.array(out)
+        if transparent_white_bg and self.g.transparent_output:
+            white_mask = np.min(arr[:, :, :3], axis=2) > 220
+            arr[white_mask, 3] = 0
+
+        return Image.fromarray(arr, "RGBA")
 
     # -------------------------
     # Logo
@@ -231,15 +312,22 @@ class BrandedQRGenerator:
     # -------------------------
 
     def _apply_dark_module_gradient(self, base_img: Image.Image) -> Image.Image:
-        arr = np.array(base_img)
-        rgb = arr[:, :, :3]
-        dark_mask = np.max(rgb, axis=2) < 40
-
         grad = self._diagonal_gradient(self.w, self.h, self.g.gradient_start_rgb, self.g.gradient_end_rgb)
         grad = self._mix_gradient(grad, self.g.gradient_mix_base_rgb, self.g.gradient_mix_ratio)
 
-        arr[dark_mask, :3] = grad[dark_mask]
-        arr[:, :, 3] = 255
+        if self._needs_custom_module_render():
+            out_img = self._render_modules_custom(
+                background_rgba=(255, 255, 255, 255),
+                gradient=grad,
+                transparent_white_bg=True,
+            )
+            arr = np.array(out_img)
+        else:
+            arr = np.array(base_img)
+            rgb = arr[:, :, :3]
+            dark_mask = np.max(rgb, axis=2) < 40
+            arr[dark_mask, :3] = grad[dark_mask]
+            arr[:, :, 3] = 255
 
         finder_positions = [
             (self.offset, self.offset),
@@ -259,27 +347,36 @@ class BrandedQRGenerator:
             arr[fy + 2 * self.cell:fy + 5 * self.cell, fx + 2 * self.cell:fx + 5 * self.cell, :3] = center_block
 
         if self.g.transparent_output:
+            rgb = arr[:, :, :3]
             white_mask = np.min(rgb, axis=2) > 220
             arr[white_mask, 3] = 0
 
         return Image.fromarray(arr, "RGBA")
 
     def _build_full_dark_qr(self) -> Image.Image:
-        arr = np.array(self.base)
-        rgb = arr[:, :, :3]
-        dark_mask = np.max(rgb, axis=2) < 40
-
         grad = self._diagonal_gradient(
             self.w,
             self.h,
             self.g.light_module_start_rgb,
             self.g.light_module_end_rgb,
         )
+        if self._needs_custom_module_render():
+            out = np.array(
+                self._render_modules_custom(
+                    background_rgba=self.g.background_rgba,
+                    gradient=grad,
+                    transparent_white_bg=False,
+                )
+            )
+        else:
+            arr = np.array(self.base)
+            rgb = arr[:, :, :3]
+            dark_mask = np.max(rgb, axis=2) < 40
 
-        out = np.zeros((self.h, self.w, 4), dtype=np.uint8)
-        out[:, :, :3] = self._np_color(self.g.background_rgba[:3])
-        out[:, :, 3] = 255
-        out[dark_mask, :3] = grad[dark_mask]
+            out = np.zeros((self.h, self.w, 4), dtype=np.uint8)
+            out[:, :, :3] = self._np_color(self.g.background_rgba[:3])
+            out[:, :, 3] = 255
+            out[dark_mask, :3] = grad[dark_mask]
 
         finder_positions = [
             (self.offset, self.offset),

@@ -66,7 +66,12 @@ class QrStudioApp:
         self._suspend_auto_preview = False
         self._preview_ctk_image: Optional[ctk.CTkImage] = None
         self._last_rendered_image: Optional[Image.Image] = None
+        self._preview_source_image: Optional[Image.Image] = None
         self._last_preview_size: tuple[int, int] = (0, 0)
+        self._last_preview_render_size: tuple[int, int] = (0, 0)
+        self._last_root_size: tuple[int, int] = (0, 0)
+        self._window_transform_end_job: Optional[str] = None
+        self._layout_lock_active = False
         self.group_input_widgets: Dict[str, list[tk.Widget]] = {name: [] for name in GROUP_ORDER}
         self.full_dark_hint_label: Optional[ctk.CTkLabel] = None
 
@@ -74,6 +79,7 @@ class QrStudioApp:
         self._load_preset(self.preset_var.get())
         self._register_var_watchers()
 
+        self.root.bind("<Configure>", self._on_root_configure, add=True)
         self.preview_image_label.bind("<Configure>", self._on_preview_container_resize, add=True)
         self._schedule_auto_preview()
 
@@ -86,17 +92,17 @@ class QrStudioApp:
     # ------------------------------------------------------------------
 
     def _build_ui(self) -> None:
-        self.root.grid_columnconfigure(0, weight=4)
-        self.root.grid_columnconfigure(1, weight=6)
+        self.root.grid_columnconfigure(0, weight=5, minsize=480, uniform="layout")
+        self.root.grid_columnconfigure(1, weight=7, minsize=520, uniform="layout")
         self.root.grid_rowconfigure(0, weight=1)
 
-        left_panel = ctk.CTkFrame(self.root, corner_radius=16)
-        right_panel = ctk.CTkFrame(self.root, corner_radius=16)
-        left_panel.grid(row=0, column=0, sticky="nsew", padx=(14, 8), pady=14)
-        right_panel.grid(row=0, column=1, sticky="nsew", padx=(8, 14), pady=14)
+        self.left_panel = ctk.CTkFrame(self.root, corner_radius=16)
+        self.right_panel = ctk.CTkFrame(self.root, corner_radius=16)
+        self.left_panel.grid(row=0, column=0, sticky="nsew", padx=(14, 8), pady=14)
+        self.right_panel.grid(row=0, column=1, sticky="nsew", padx=(8, 14), pady=14)
 
-        self._build_left(left_panel)
-        self._build_right(right_panel)
+        self._build_left(self.left_panel)
+        self._build_right(self.right_panel)
 
     def _build_left(self, parent: ctk.CTkFrame) -> None:
         parent.grid_rowconfigure(3, weight=1)
@@ -450,6 +456,58 @@ class QrStudioApp:
             self.group_input_widgets[group_name].append(control)
             return
 
+        if field_name == "module_shape":
+            var = tk.StringVar(value=str(default_value))
+            control = ctk.CTkOptionMenu(
+                parent,
+                variable=var,
+                values=["square", "rounded", "dot"],
+                width=210,
+                dynamic_resizing=False,
+                command=lambda _v: self._schedule_auto_preview(),
+            )
+            control.grid(row=row, column=1, sticky="w", pady=5)
+            self.graphic_vars[field_name] = var
+            self.group_input_widgets[group_name].append(control)
+            return
+
+        if field_name in {"module_scale", "module_corner_ratio"}:
+            slider_min = 0.45 if field_name == "module_scale" else 0.0
+            slider_max = 1.20 if field_name == "module_scale" else 1.0
+            steps = 75 if field_name == "module_scale" else 100
+            var = tk.DoubleVar(value=float(default_value))
+            value_text = tk.StringVar(value=f"{float(default_value):.2f}")
+
+            def _sync_slider_label(*_args):
+                value_text.set(f"{float(var.get()):.2f}")
+
+            def _on_slider(_value: float):
+                _sync_slider_label()
+                self._schedule_auto_preview()
+
+            var.trace_add("write", _sync_slider_label)
+
+            control_wrap = ctk.CTkFrame(parent, fg_color="transparent")
+            control_wrap.grid(row=row, column=1, sticky="ew", pady=5)
+            control_wrap.grid_columnconfigure(0, weight=1)
+
+            slider = ctk.CTkSlider(
+                control_wrap,
+                from_=slider_min,
+                to=slider_max,
+                number_of_steps=steps,
+                variable=var,
+                command=_on_slider,
+            )
+            slider.grid(row=0, column=0, sticky="ew", padx=(0, 10))
+
+            value_label = ctk.CTkLabel(control_wrap, textvariable=value_text, width=42, anchor="e")
+            value_label.grid(row=0, column=1, sticky="e")
+
+            self.graphic_vars[field_name] = var
+            self.group_input_widgets[group_name].append(control_wrap)
+            return
+
         if isinstance(default_value, bool):
             var = tk.BooleanVar(value=default_value)
             control = ctk.CTkSwitch(
@@ -773,23 +831,32 @@ class QrStudioApp:
             return
 
         self._last_rendered_image = image.copy()
-        self._set_preview_image(image)
+        self._preview_source_image = image.copy()
+        self._set_preview_image(self._preview_source_image, recreate_ctk_image=True)
         self.preview_meta_label.configure(text=f"Preset: {cfg.graphic.style_mode} | Canvas: {image.width}x{image.height}")
         self._set_status("Preview updated")
 
-    def _set_preview_image(self, image: Image.Image) -> None:
-        target_w = max(280, self.preview_image_label.winfo_width() - 24)
-        target_h = max(280, self.preview_image_label.winfo_height() - 24)
+    def _compute_preview_size(self, image: Image.Image) -> tuple[int, int]:
+        avail_w = max(280, self.preview_image_label.winfo_width() - 24)
+        avail_h = max(280, self.preview_image_label.winfo_height() - 24)
+        src_w, src_h = image.size
+        ratio = min(avail_w / max(1, src_w), avail_h / max(1, src_h), 1.0)
+        return max(1, int(src_w * ratio)), max(1, int(src_h * ratio))
 
-        display = image.copy()
-        display.thumbnail((target_w, target_h), Image.LANCZOS)
+    def _set_preview_image(self, image: Image.Image, recreate_ctk_image: bool) -> None:
+        target_size = self._compute_preview_size(image)
+        self._last_preview_render_size = target_size
 
-        self._preview_ctk_image = ctk.CTkImage(
-            light_image=display,
-            dark_image=display,
-            size=(display.width, display.height),
-        )
-        self.preview_image_label.configure(image=self._preview_ctk_image, text="")
+        if recreate_ctk_image or self._preview_ctk_image is None:
+            self._preview_ctk_image = ctk.CTkImage(
+                light_image=image,
+                dark_image=image,
+                size=target_size,
+            )
+            self.preview_image_label.configure(image=self._preview_ctk_image, text="")
+            return
+
+        self._preview_ctk_image.configure(size=target_size)
 
     def _render_preview_manual(self) -> None:
         self._render_preview(show_errors=True)
@@ -912,6 +979,10 @@ class QrStudioApp:
                 value = getattr(preset_cfg, field.name)
                 if isinstance(var, tk.BooleanVar):
                     var.set(bool(value))
+                elif isinstance(var, tk.DoubleVar):
+                    var.set(float(value))
+                elif isinstance(var, tk.IntVar):
+                    var.set(int(value))
                 else:
                     var.set(self._serialize_value(field.name, value))
         finally:
@@ -951,11 +1022,50 @@ class QrStudioApp:
 
         self._preview_job_id = self.root.after(280, self._render_preview_silent)
 
+    def _on_root_configure(self, _event=None) -> None:
+        current_size = (self.root.winfo_width(), self.root.winfo_height())
+        if current_size == self._last_root_size:
+            return
+
+        self._last_root_size = current_size
+
+        # Window resize can trigger many hover transitions under cursor.
+        ToolTip.suspend_events_for(220)
+        self._lock_layout_for_live_resize()
+        self._schedule_window_transform_end()
+
+    def _lock_layout_for_live_resize(self) -> None:
+        if self._layout_lock_active:
+            return
+
+        self._layout_lock_active = True
+
+    def _schedule_window_transform_end(self) -> None:
+        if self._window_transform_end_job is not None:
+            self.root.after_cancel(self._window_transform_end_job)
+        self._window_transform_end_job = self.root.after(170, self._on_window_transform_end)
+
+    def _on_window_transform_end(self) -> None:
+        self._window_transform_end_job = None
+        if not self._layout_lock_active:
+            return
+
+        self._layout_lock_active = False
+
+        self._schedule_preview_resize()
+
     def _on_preview_container_resize(self, _event=None) -> None:
+        if self._layout_lock_active:
+            return
+        if not self.auto_preview_var.get():
+            return
+
         new_size = (
             self.preview_image_label.winfo_width(),
             self.preview_image_label.winfo_height(),
         )
+        if new_size[0] <= 1 or new_size[1] <= 1:
+            return
         if new_size == self._last_preview_size:
             return
         self._last_preview_size = new_size
@@ -964,13 +1074,19 @@ class QrStudioApp:
     def _schedule_preview_resize(self) -> None:
         if self._resize_preview_job_id is not None:
             self.root.after_cancel(self._resize_preview_job_id)
-        self._resize_preview_job_id = self.root.after(200, self._refresh_preview_from_cache)
+        self._resize_preview_job_id = self.root.after(260, self._refresh_preview_from_cache)
 
     def _refresh_preview_from_cache(self) -> None:
         self._resize_preview_job_id = None
-        if self._last_rendered_image is None:
+        if self._preview_source_image is None or self._preview_ctk_image is None:
             return
-        self._set_preview_image(self._last_rendered_image)
+
+        target_size = self._compute_preview_size(self._preview_source_image)
+        if target_size == self._last_preview_render_size:
+            return
+
+        self._last_preview_render_size = target_size
+        self._preview_ctk_image.configure(size=target_size)
 
     # ------------------------------------------------------------------
     # Status

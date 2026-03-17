@@ -1,11 +1,20 @@
 from __future__ import annotations
 
+import time
 import tkinter as tk
 from typing import Optional
 
 
 class ToolTip:
     """Modern-looking tooltip that appears on hover after a short delay."""
+    _suspend_until_ts: float = 0.0
+
+    @classmethod
+    def suspend_events_for(cls, ms: int = 180) -> None:
+        cls._suspend_until_ts = max(
+            cls._suspend_until_ts,
+            time.monotonic() + (ms / 1000.0),
+        )
 
     def __init__(self, widget: tk.Widget, text: str, delay_ms: int = 350):
         self.widget = widget
@@ -19,6 +28,8 @@ class ToolTip:
         self.widget.bind("<ButtonPress>", self._hide, add=True)
 
     def _schedule(self, _event=None):
+        if time.monotonic() < self._suspend_until_ts:
+            return
         self._cancel()
         self._job = self.widget.after(self.delay_ms, self._show)
 

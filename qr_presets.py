@@ -28,6 +28,9 @@ class GraphicConfig:
     gradient_end_rgb: Color3 = (36, 92, 132)
     gradient_mix_base_rgb: Optional[Color3] = (16, 21, 28)
     gradient_mix_ratio: float = 0.55  # 0..1 applied to mix_base
+    module_shape: str = "square"  # square | rounded | dot
+    module_scale: float = 1.0
+    module_corner_ratio: float = 0.35
 
     # Finder styling
     finder_outer_rgb: Color3 = (16, 21, 28)
