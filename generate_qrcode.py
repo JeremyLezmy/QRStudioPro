@@ -54,6 +54,9 @@ def create_qr_config(
     preset_name: Optional[str],
     logo_path: Optional[Path] = None,
     output_path: Path = DEFAULT_OUTPUT_PATH,
+    box_size: int = 22,
+    border: int = 4,
+    error_correction: int = ERROR_CORRECT_H,
     graphic_overrides: Optional[Dict] = None,
     run_decode_check: bool = True,
     verbose: bool = True,
@@ -62,6 +65,9 @@ def create_qr_config(
         url=url,
         logo_path=logo_path,
         output_path=output_path,
+        box_size=box_size,
+        border=border,
+        error_correction=error_correction,
         run_decode_check=run_decode_check,
         verbose=verbose,
     )
@@ -394,21 +400,51 @@ class BrandedQRGenerator:
 
         raise ValueError(f"style_mode inconnu: {mode}")
 
-    def save(self) -> Image.Image:
-        self.cfg.output_path.parent.mkdir(parents=True, exist_ok=True)
+    def save(
+        self,
+        output_path: Optional[Path] = None,
+        image_format: Optional[str] = None,
+        max_width: Optional[int] = None,
+        quality: int = 95,
+    ) -> Image.Image:
+        target_output = output_path or self.cfg.output_path
+        target_output.parent.mkdir(parents=True, exist_ok=True)
 
         img = self.render()
-        img.save(self.cfg.output_path)
-        self._debug(f"Fichier cree : {self.cfg.output_path}")
+
+        if max_width and max_width > 0 and img.width > max_width:
+            ratio = max_width / float(img.width)
+            new_h = max(1, int(img.height * ratio))
+            img = img.resize((max_width, new_h), Image.LANCZOS)
+
+        save_format = image_format.upper() if image_format else None
+        save_kwargs: Dict[str, int] = {}
+
+        if save_format in {"JPEG", "JPG"}:
+            if img.mode != "RGB":
+                bg = Image.new("RGB", img.size, self.g.background_rgba[:3])
+                bg.paste(img, mask=img.split()[3] if "A" in img.getbands() else None)
+                img_to_save = bg
+            else:
+                img_to_save = img
+            save_kwargs["quality"] = max(1, min(quality, 100))
+            save_kwargs["optimize"] = 1
+        else:
+            img_to_save = img
+            if save_format == "WEBP":
+                save_kwargs["quality"] = max(1, min(quality, 100))
+
+        img_to_save.save(target_output, format=save_format, **save_kwargs)
+        self._debug(f"Fichier cree : {target_output}")
 
         if self.cfg.run_decode_check:
             if cv2 is None:
                 self._debug("Decodage : SKIP (opencv-python non installe)")
             else:
-                decoded = self.decode_check(self.cfg.output_path)
+                decoded = self.decode_check(target_output)
                 self._debug("Decodage :", decoded if decoded else "ECHEC")
 
-        return img
+        return img_to_save
 
     def decode_check(self, image_path: Path) -> str:
         if cv2 is None:
