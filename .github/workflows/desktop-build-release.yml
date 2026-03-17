@@ -41,7 +41,7 @@ jobs:
       - name: Build macOS app
         if: matrix.label == 'macos'
         shell: bash
-        run: ./scripts/build_macos.sh
+        run: bash ./scripts/build_macos.sh
 
       - name: Archive Windows bundle
         if: matrix.label == 'windows'
