@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import sys
 from dataclasses import fields
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -53,6 +54,10 @@ class QrStudioApp:
         self.root.title("QR Studio Pro")
         self.root.geometry("1600x940")
         self.root.minsize(WINDOW_MIN_WIDTH, WINDOW_MIN_HEIGHT)
+        self._window_icon_photo: Optional[tk.PhotoImage] = None
+        self._set_application_icon()
+        self._builtin_logo_paths = self._discover_builtin_logos()
+        self._logo_library_sync_lock = False
 
         ctk.set_appearance_mode("dark")
         ctk.set_default_color_theme("green")
@@ -71,6 +76,7 @@ class QrStudioApp:
         )
         self.preview_split_text_var = tk.StringVar()
         self.logo_var = tk.StringVar(value=self._default_logo_path())
+        self.logo_library_var = tk.StringVar(value="Custom")
         self.output_var = tk.StringVar(value="generated_qrcode/qr_output.png")
         self.box_size_var = tk.StringVar(value="22")
         self.border_var = tk.StringVar(value="4")
@@ -106,14 +112,77 @@ class QrStudioApp:
         self._apply_layout_split_ratio(self.preview_split_ratio_var.get())
         self._load_preset(self.preset_var.get())
         self._register_var_watchers()
+        self._sync_logo_library_selection()
 
         self.root.bind("<Configure>", self._on_root_configure, add=True)
         self.preview_image_label.bind("<Configure>", self._on_preview_container_resize, add=True)
         self._schedule_auto_preview()
 
     def _default_logo_path(self) -> str:
-        default_logo = Path("logo_phusis.png")
-        return str(default_logo) if default_logo.exists() else ""
+        default_logo = self._builtin_logo_paths.get("Phusis")
+        return str(default_logo) if default_logo is not None else ""
+
+    def _discover_builtin_logos(self) -> Dict[str, Optional[Path]]:
+        root = self._project_root()
+
+        def _pick(*relative_paths: str) -> Optional[Path]:
+            for rel in relative_paths:
+                p = root / rel
+                if p.exists():
+                    return p
+            return None
+
+        logos: Dict[str, Optional[Path]] = {"No logo": None}
+
+        phusis = _pick("assets/logos/logo_phusis.png", "logo_phusis.png")
+        if phusis is not None:
+            logos["Phusis"] = phusis
+
+        romane = _pick(
+            "assets/logos/logo-romane-pena.webp",
+            "assets/logos/logo-romane-pena.png",
+            "logo-romane-pena.webp",
+            "logo-romane-pena.png",
+        )
+        if romane is not None:
+            logos["Romane Pena"] = romane
+
+        return logos
+
+    def _logo_library_values(self) -> list[str]:
+        return ["Custom"] + list(self._builtin_logo_paths.keys())
+
+    def _project_root(self) -> Path:
+        if getattr(sys, "frozen", False):
+            base = getattr(sys, "_MEIPASS", None)
+            if base:
+                return Path(base)
+        return Path(__file__).resolve().parents[1]
+
+    def _set_application_icon(self) -> None:
+        root = self._project_root()
+        ico_path = root / "assets" / "app_icon.ico"
+        png_candidates = [
+            root / "assets" / "app_icon.png",
+            root / "logo_phusis.png",
+        ]
+
+        if ico_path.exists():
+            try:
+                self.root.iconbitmap(default=str(ico_path))
+                return
+            except Exception:
+                pass
+
+        for png_path in png_candidates:
+            if not png_path.exists():
+                continue
+            try:
+                self._window_icon_photo = tk.PhotoImage(file=str(png_path))
+                self.root.iconphoto(True, self._window_icon_photo)
+                return
+            except Exception:
+                continue
 
     # ------------------------------------------------------------------
     # UI
@@ -190,9 +259,9 @@ class QrStudioApp:
 
         self._add_preset_io_row(basics, row=2)
         self._add_logo_row(basics, row=3)
-        self._add_output_row(basics, row=4)
-        self._add_qr_technical_row(basics, row=5)
-        self._add_export_row(basics, row=6)
+        self._add_output_row(basics, row=5)
+        self._add_qr_technical_row(basics, row=6)
+        self._add_export_row(basics, row=7)
 
         self.drop_zone = ctk.CTkLabel(
             basics,
@@ -202,7 +271,7 @@ class QrStudioApp:
             text_color=("#1f2937", "#d1d5db"),
             height=36,
         )
-        self.drop_zone.grid(row=7, column=0, columnspan=3, sticky="ew", padx=12, pady=(4, 10))
+        self.drop_zone.grid(row=8, column=0, columnspan=3, sticky="ew", padx=12, pady=(4, 10))
         self.tooltips.append(ToolTip(self.drop_zone, "Glissez-déposez un fichier image ici pour l'utiliser comme logo"))
 
         actions = ctk.CTkFrame(parent, corner_radius=12)
@@ -386,6 +455,20 @@ class QrStudioApp:
         self.tooltips.append(ToolTip(self.logo_entry, "Chemin vers le fichier logo (PNG, JPG, WEBP…)"))
         self.tooltips.append(ToolTip(browse_btn, "Parcourir pour sélectionner un fichier logo"))
         self.tooltips.append(ToolTip(clear_btn, "Retirer le logo du QR code"))
+
+        lib_label = ctk.CTkLabel(parent, text="Built-in", anchor="w")
+        lib_label.grid(row=row + 1, column=0, sticky="w", padx=12, pady=(0, 7))
+        self.logo_library_menu = ctk.CTkOptionMenu(
+            parent,
+            variable=self.logo_library_var,
+            values=self._logo_library_values(),
+            command=self._on_logo_library_changed,
+            width=220,
+            dynamic_resizing=False,
+        )
+        self.logo_library_menu.grid(row=row + 1, column=1, sticky="w", padx=(6, 6), pady=(0, 7))
+        self.tooltips.append(ToolTip(lib_label, "Sélectionne un logo intégré à l'application"))
+        self.tooltips.append(ToolTip(self.logo_library_menu, "Phusis / Romane Pena / sans logo / custom"))
 
     def _add_output_row(self, parent: ctk.CTkFrame, row: int) -> None:
         output_label = ctk.CTkLabel(parent, text="Output", anchor="w")
@@ -667,6 +750,59 @@ class QrStudioApp:
         self.logo_var.set(path)
         self._set_status(f"Logo loaded: {path}")
         self._schedule_auto_preview()
+
+    def _on_logo_library_changed(self, choice: str) -> None:
+        if choice == "Custom":
+            return
+
+        selected = self._builtin_logo_paths.get(choice)
+        self._logo_library_sync_lock = True
+        try:
+            if selected is None:
+                self.logo_var.set("none")
+                self._set_status("Logo intégré: aucun logo")
+            else:
+                self.logo_var.set(str(selected))
+                self._set_status(f"Logo intégré: {choice}")
+        finally:
+            self._logo_library_sync_lock = False
+        self._schedule_auto_preview()
+
+    def _sync_logo_library_selection(self) -> None:
+        if self._logo_library_sync_lock:
+            return
+
+        raw = self.logo_var.get().strip()
+        lowered = raw.lower()
+        target_choice = "Custom"
+
+        if lowered in {"", "none", "null", "sans"}:
+            target_choice = "No logo"
+        else:
+            raw_path = Path(raw)
+            try:
+                resolved_raw = raw_path.resolve(strict=False)
+            except Exception:
+                resolved_raw = raw_path
+
+            for label, path in self._builtin_logo_paths.items():
+                if path is None:
+                    continue
+                try:
+                    if resolved_raw == path.resolve(strict=False):
+                        target_choice = label
+                        break
+                except Exception:
+                    if str(raw_path) == str(path):
+                        target_choice = label
+                        break
+
+        if self.logo_library_var.get() != target_choice:
+            self._logo_library_sync_lock = True
+            try:
+                self.logo_library_var.set(target_choice)
+            finally:
+                self._logo_library_sync_lock = False
 
     # ------------------------------------------------------------------
     # Parsing
@@ -1228,6 +1364,10 @@ class QrStudioApp:
 
         for var in tracked:
             var.trace_add("write", self._on_any_var_changed)
+        self.logo_var.trace_add("write", self._on_logo_var_changed)
+
+    def _on_logo_var_changed(self, *_args) -> None:
+        self._sync_logo_library_selection()
 
     def _on_any_var_changed(self, *_args) -> None:
         if self._suspend_auto_preview:

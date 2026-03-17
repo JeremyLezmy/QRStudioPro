@@ -4,3 +4,8 @@ generated_qrcode
 
 __pycache__/*
 __pycache__
+
+build/
+dist/
+*.spec
+assets/*.iconset/
