@@ -400,6 +400,25 @@ class BrandedQRGenerator:
 
         raise ValueError(f"style_mode inconnu: {mode}")
 
+    def save_svg(self, output_path: Optional[Path] = None) -> None:
+        """Export a clean vectorial SVG (no raster effects)."""
+        import qrcode.image.svg
+
+        target = output_path or self.cfg.output_path
+        target.parent.mkdir(parents=True, exist_ok=True)
+
+        factory = qrcode.image.svg.SvgPathImage
+        qr = qrcode.QRCode(
+            error_correction=self.cfg.error_correction,
+            box_size=self.cfg.box_size,
+            border=self.cfg.border,
+        )
+        qr.add_data(self.cfg.url)
+        qr.make(fit=True)
+        img = qr.make_image(image_factory=factory)
+        img.save(str(target))
+        self._debug(f"Fichier SVG cree : {target}")
+
     def save(
         self,
         output_path: Optional[Path] = None,

@@ -5,6 +5,8 @@ from typing import Optional
 
 
 class ToolTip:
+    """Modern-looking tooltip that appears on hover after a short delay."""
+
     def __init__(self, widget: tk.Widget, text: str, delay_ms: int = 350):
         self.widget = widget
         self.text = text
@@ -36,18 +38,30 @@ class ToolTip:
         tw.wm_overrideredirect(True)
         tw.wm_geometry(f"+{x}+{y}")
 
-        label = tk.Label(
+        # Prevent tooltip from covering screen edges
+        tw.update_idletasks()
+
+        frame = tk.Frame(
             tw,
+            background="#1e293b",
+            highlightbackground="#334155",
+            highlightthickness=1,
+            padx=0,
+            pady=0,
+        )
+        frame.pack()
+
+        label = tk.Label(
+            frame,
             text=self.text,
             justify="left",
-            background="#111827",
-            foreground="#e5e7eb",
-            relief="solid",
-            borderwidth=1,
-            padx=8,
-            pady=6,
+            background="#1e293b",
+            foreground="#e2e8f0",
+            relief="flat",
+            padx=10,
+            pady=7,
             font=("Segoe UI", 9),
-            wraplength=360,
+            wraplength=400,
         )
         label.pack()
 

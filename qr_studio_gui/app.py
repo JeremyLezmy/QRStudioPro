@@ -57,12 +57,16 @@ class QrStudioApp:
 
         self.graphic_vars: Dict[str, tk.Variable] = {}
         self.tooltips: list[ToolTip] = []
+        self.color_swatches: Dict[str, ctk.CTkFrame] = {}
+        self._export_quality_widgets: list[tk.Widget] = []
+        self._export_maxw_widgets: list[tk.Widget] = []
 
         self._preview_job_id: Optional[str] = None
         self._resize_preview_job_id: Optional[str] = None
         self._suspend_auto_preview = False
         self._preview_ctk_image: Optional[ctk.CTkImage] = None
         self._last_rendered_image: Optional[Image.Image] = None
+        self._last_preview_size: tuple[int, int] = (0, 0)
         self.group_input_widgets: Dict[str, list[tk.Widget]] = {name: [] for name in GROUP_ORDER}
         self.full_dark_hint_label: Optional[ctk.CTkLabel] = None
 
@@ -109,9 +113,17 @@ class QrStudioApp:
         basics.grid(row=1, column=0, sticky="ew", padx=12, pady=(0, 10))
         basics.grid_columnconfigure(1, weight=1)
 
-        self._add_labeled_entry(basics, "URL", self.url_var, 0)
+        # --- URL ---
+        url_label = ctk.CTkLabel(basics, text="URL", anchor="w")
+        url_label.grid(row=0, column=0, sticky="w", padx=12, pady=7)
+        url_entry = ctk.CTkEntry(basics, textvariable=self.url_var)
+        url_entry.grid(row=0, column=1, columnspan=2, sticky="ew", padx=(6, 12), pady=7)
+        self.tooltips.append(ToolTip(url_label, "URL ou texte à encoder dans le QR code"))
+        self.tooltips.append(ToolTip(url_entry, "URL ou texte à encoder dans le QR code"))
 
-        ctk.CTkLabel(basics, text="Preset", anchor="w").grid(row=1, column=0, sticky="w", padx=12, pady=7)
+        # --- Preset ---
+        preset_label = ctk.CTkLabel(basics, text="Preset", anchor="w")
+        preset_label.grid(row=1, column=0, sticky="w", padx=12, pady=7)
         self.preset_menu = ctk.CTkOptionMenu(
             basics,
             variable=self.preset_var,
@@ -121,13 +133,16 @@ class QrStudioApp:
             dynamic_resizing=False,
         )
         self.preset_menu.grid(row=1, column=1, sticky="w", padx=(6, 6), pady=7)
-
-        ctk.CTkButton(
+        reload_btn = ctk.CTkButton(
             basics,
             text="Reload",
             width=88,
             command=self._reload_preset,
-        ).grid(row=1, column=2, sticky="e", padx=(2, 12), pady=7)
+        )
+        reload_btn.grid(row=1, column=2, sticky="e", padx=(2, 12), pady=7)
+        self.tooltips.append(ToolTip(preset_label, "Thème graphique prédéfini à appliquer"))
+        self.tooltips.append(ToolTip(self.preset_menu, "Thème graphique prédéfini à appliquer"))
+        self.tooltips.append(ToolTip(reload_btn, "Réinitialise les paramètres graphiques au preset sélectionné"))
 
         self._add_logo_row(basics, row=2)
         self._add_output_row(basics, row=3)
@@ -136,33 +151,43 @@ class QrStudioApp:
 
         self.drop_zone = ctk.CTkLabel(
             basics,
-            text="Drop logo file here",
+            text="📂  Glissez-déposez un logo ici",
             corner_radius=8,
             fg_color=("#dbe4ef", "#28303a"),
             text_color=("#1f2937", "#d1d5db"),
             height=36,
         )
         self.drop_zone.grid(row=6, column=0, columnspan=3, sticky="ew", padx=12, pady=(4, 10))
+        self.tooltips.append(ToolTip(self.drop_zone, "Glissez-déposez un fichier image ici pour l'utiliser comme logo"))
 
         actions = ctk.CTkFrame(parent, corner_radius=12)
         actions.grid(row=2, column=0, sticky="ew", padx=12, pady=(0, 10))
 
-        ctk.CTkSwitch(actions, text="Auto Preview", variable=self.auto_preview_var).grid(
-            row=0, column=0, sticky="w", padx=12, pady=10
-        )
-        ctk.CTkSwitch(actions, text="Decode Check", variable=self.decode_var).grid(
-            row=0, column=1, sticky="w", padx=12, pady=10
-        )
-        ctk.CTkSwitch(actions, text="Quiet Logs", variable=self.quiet_var).grid(
-            row=0, column=2, sticky="w", padx=12, pady=10
-        )
+        sw_auto = ctk.CTkSwitch(actions, text="Auto Preview", variable=self.auto_preview_var)
+        sw_auto.grid(row=0, column=0, sticky="w", padx=12, pady=10)
+        self.tooltips.append(ToolTip(sw_auto, "Actualise l'aperçu automatiquement à chaque modification de paramètre"))
 
-        ctk.CTkButton(actions, text="Preview", command=self._render_preview_manual).grid(
-            row=0, column=3, sticky="e", padx=(8, 6), pady=10
+        sw_decode = ctk.CTkSwitch(actions, text="Decode Check", variable=self.decode_var)
+        sw_decode.grid(row=0, column=1, sticky="w", padx=12, pady=10)
+        self.tooltips.append(ToolTip(sw_decode, "Vérifie que le QR généré est lisible via OpenCV après export"))
+
+        sw_quiet = ctk.CTkSwitch(actions, text="Quiet Logs", variable=self.quiet_var)
+        sw_quiet.grid(row=0, column=2, sticky="w", padx=12, pady=10)
+        self.tooltips.append(ToolTip(sw_quiet, "Désactive les logs de génération dans la console"))
+
+        preview_btn = ctk.CTkButton(actions, text="👁  Preview", command=self._render_preview_manual)
+        preview_btn.grid(row=0, column=3, sticky="e", padx=(8, 6), pady=10)
+        self.tooltips.append(ToolTip(preview_btn, "Génère un aperçu sans sauvegarder de fichier"))
+
+        self.export_btn = ctk.CTkButton(
+            actions,
+            text="💾  Export QR",
+            command=self._save_qr,
+            fg_color=("#166534", "#22c55e"),
+            hover_color=("#15803d", "#16a34a"),
         )
-        ctk.CTkButton(actions, text="Generate PNG", command=self._save_qr).grid(
-            row=0, column=4, sticky="e", padx=(6, 12), pady=10
-        )
+        self.export_btn.grid(row=0, column=4, sticky="e", padx=(6, 12), pady=10)
+        self.tooltips.append(ToolTip(self.export_btn, "Exporte le QR code dans le format et chemin sélectionnés"))
 
         for col in range(5):
             actions.grid_columnconfigure(col, weight=1)
@@ -174,7 +199,7 @@ class QrStudioApp:
 
         ctk.CTkLabel(
             config_card,
-            text="Graphic Parameters",
+            text="🎨  Graphic Parameters",
             font=ctk.CTkFont(size=15, weight="bold"),
             anchor="w",
         ).grid(row=0, column=0, sticky="ew", padx=12, pady=(10, 8))
@@ -198,9 +223,10 @@ class QrStudioApp:
             if group_name == "Full Dark":
                 self.full_dark_hint_label = ctk.CTkLabel(
                     scroll,
-                    text="Active only when style_mode = full_dark_artistic",
+                    text="⚠  Actif uniquement en mode full_dark_artistic",
                     anchor="w",
                     text_color=("#64748b", "#94a3b8"),
+                    font=ctk.CTkFont(size=12, slant="italic"),
                 )
                 self.full_dark_hint_label.grid(row=0, column=0, columnspan=3, sticky="ew", padx=4, pady=(2, 8))
                 tab_rows[group_name] = 1
@@ -235,7 +261,7 @@ class QrStudioApp:
 
         ctk.CTkLabel(
             parent,
-            text="Live Preview",
+            text="🖼  Live Preview",
             font=ctk.CTkFont(size=22, weight="bold"),
             anchor="w",
         ).grid(row=0, column=0, sticky="ew", padx=16, pady=(14, 8))
@@ -271,82 +297,119 @@ class QrStudioApp:
         )
         self.status_label.grid(row=2, column=0, sticky="ew", padx=12, pady=(0, 12), ipady=8)
 
-    def _add_labeled_entry(self, parent: ctk.CTkFrame, label: str, variable: tk.StringVar, row: int) -> None:
-        ctk.CTkLabel(parent, text=label, anchor="w").grid(row=row, column=0, sticky="w", padx=12, pady=7)
-        ctk.CTkEntry(parent, textvariable=variable).grid(
-            row=row,
-            column=1,
-            columnspan=2,
-            sticky="ew",
-            padx=(6, 12),
-            pady=7,
-        )
+    def _add_labeled_entry(
+        self, parent: ctk.CTkFrame, label: str, variable: tk.StringVar, row: int, tooltip: str = "",
+    ) -> None:
+        lbl = ctk.CTkLabel(parent, text=label, anchor="w")
+        lbl.grid(row=row, column=0, sticky="w", padx=12, pady=7)
+        entry = ctk.CTkEntry(parent, textvariable=variable)
+        entry.grid(row=row, column=1, columnspan=2, sticky="ew", padx=(6, 12), pady=7)
+        if tooltip:
+            self.tooltips.append(ToolTip(lbl, tooltip))
+            self.tooltips.append(ToolTip(entry, tooltip))
 
     def _add_logo_row(self, parent: ctk.CTkFrame, row: int) -> None:
-        ctk.CTkLabel(parent, text="Logo", anchor="w").grid(row=row, column=0, sticky="w", padx=12, pady=7)
+        logo_label = ctk.CTkLabel(parent, text="Logo", anchor="w")
+        logo_label.grid(row=row, column=0, sticky="w", padx=12, pady=7)
         self.logo_entry = ctk.CTkEntry(parent, textvariable=self.logo_var)
         self.logo_entry.grid(row=row, column=1, sticky="ew", padx=(6, 6), pady=7)
 
         button_wrap = ctk.CTkFrame(parent, fg_color="transparent")
         button_wrap.grid(row=row, column=2, sticky="e", padx=(2, 12), pady=7)
-        ctk.CTkButton(button_wrap, text="Browse", width=74, command=self._pick_logo).grid(row=0, column=0, padx=(0, 6))
-        ctk.CTkButton(button_wrap, text="Clear", width=58, command=lambda: self.logo_var.set("")).grid(row=0, column=1)
+        browse_btn = ctk.CTkButton(button_wrap, text="Browse", width=74, command=self._pick_logo)
+        browse_btn.grid(row=0, column=0, padx=(0, 6))
+        clear_btn = ctk.CTkButton(button_wrap, text="Clear", width=58, command=lambda: self.logo_var.set(""))
+        clear_btn.grid(row=0, column=1)
+
+        self.tooltips.append(ToolTip(logo_label, "Chemin vers le fichier logo (PNG, JPG, WEBP…)"))
+        self.tooltips.append(ToolTip(self.logo_entry, "Chemin vers le fichier logo (PNG, JPG, WEBP…)"))
+        self.tooltips.append(ToolTip(browse_btn, "Parcourir pour sélectionner un fichier logo"))
+        self.tooltips.append(ToolTip(clear_btn, "Retirer le logo du QR code"))
 
     def _add_output_row(self, parent: ctk.CTkFrame, row: int) -> None:
-        ctk.CTkLabel(parent, text="Output", anchor="w").grid(row=row, column=0, sticky="w", padx=12, pady=7)
+        output_label = ctk.CTkLabel(parent, text="Output", anchor="w")
+        output_label.grid(row=row, column=0, sticky="w", padx=12, pady=7)
         self.output_entry = ctk.CTkEntry(parent, textvariable=self.output_var)
         self.output_entry.grid(row=row, column=1, sticky="ew", padx=(6, 6), pady=7)
 
-        ctk.CTkButton(parent, text="Choose", width=138, command=self._pick_output).grid(
-            row=row,
-            column=2,
-            sticky="e",
-            padx=(2, 12),
-            pady=7,
-        )
+        choose_btn = ctk.CTkButton(parent, text="Choose", width=138, command=self._pick_output)
+        choose_btn.grid(row=row, column=2, sticky="e", padx=(2, 12), pady=7)
+
+        self.tooltips.append(ToolTip(output_label, "Chemin de sortie du fichier QR généré"))
+        self.tooltips.append(ToolTip(self.output_entry, "Chemin de sortie du fichier QR généré"))
+        self.tooltips.append(ToolTip(choose_btn, "Choisir l'emplacement de sauvegarde"))
 
     def _add_qr_technical_row(self, parent: ctk.CTkFrame, row: int) -> None:
-        ctk.CTkLabel(parent, text="QR Tech", anchor="w").grid(row=row, column=0, sticky="w", padx=12, pady=7)
+        tech_label = ctk.CTkLabel(parent, text="QR Tech", anchor="w")
+        tech_label.grid(row=row, column=0, sticky="w", padx=12, pady=7)
+        self.tooltips.append(ToolTip(tech_label, "Paramètres techniques de génération du QR code"))
 
         wrap = ctk.CTkFrame(parent, fg_color="transparent")
         wrap.grid(row=row, column=1, columnspan=2, sticky="ew", padx=(6, 12), pady=7)
         wrap.grid_columnconfigure(1, weight=1)
         wrap.grid_columnconfigure(3, weight=1)
 
-        ctk.CTkLabel(wrap, text="Box").grid(row=0, column=0, sticky="w")
-        ctk.CTkEntry(wrap, textvariable=self.box_size_var, width=72).grid(row=0, column=1, sticky="w", padx=(6, 14))
-        ctk.CTkLabel(wrap, text="Border").grid(row=0, column=2, sticky="w")
-        ctk.CTkEntry(wrap, textvariable=self.border_var, width=72).grid(row=0, column=3, sticky="w", padx=(6, 0))
+        box_label = ctk.CTkLabel(wrap, text="Box")
+        box_label.grid(row=0, column=0, sticky="w")
+        box_entry = ctk.CTkEntry(wrap, textvariable=self.box_size_var, width=72)
+        box_entry.grid(row=0, column=1, sticky="w", padx=(6, 14))
+        self.tooltips.append(ToolTip(box_label, "Taille en pixels de chaque module du QR (plus grand = image plus haute résolution)"))
+        self.tooltips.append(ToolTip(box_entry, "Taille en pixels de chaque module du QR (plus grand = image plus haute résolution)"))
+
+        border_label = ctk.CTkLabel(wrap, text="Border")
+        border_label.grid(row=0, column=2, sticky="w")
+        border_entry = ctk.CTkEntry(wrap, textvariable=self.border_var, width=72)
+        border_entry.grid(row=0, column=3, sticky="w", padx=(6, 0))
+        self.tooltips.append(ToolTip(border_label, "Nombre de modules de marge autour du QR (min. recommandé : 4)"))
+        self.tooltips.append(ToolTip(border_entry, "Nombre de modules de marge autour du QR (min. recommandé : 4)"))
 
     def _add_export_row(self, parent: ctk.CTkFrame, row: int) -> None:
-        ctk.CTkLabel(parent, text="Export", anchor="w").grid(row=row, column=0, sticky="w", padx=12, pady=7)
+        export_label = ctk.CTkLabel(parent, text="Export", anchor="w")
+        export_label.grid(row=row, column=0, sticky="w", padx=12, pady=7)
+        self.tooltips.append(ToolTip(export_label, "Paramètres d'export du fichier image"))
 
         wrap = ctk.CTkFrame(parent, fg_color="transparent")
         wrap.grid(row=row, column=1, columnspan=2, sticky="ew", padx=(6, 12), pady=7)
         wrap.grid_columnconfigure(5, weight=1)
 
-        ctk.CTkLabel(wrap, text="Format").grid(row=0, column=0, sticky="w")
-        ctk.CTkOptionMenu(
+        fmt_label = ctk.CTkLabel(wrap, text="Format")
+        fmt_label.grid(row=0, column=0, sticky="w")
+        fmt_menu = ctk.CTkOptionMenu(
             wrap,
             variable=self.output_format_var,
-            values=["auto", "png", "webp", "jpeg"],
+            values=["auto", "png", "webp", "jpeg", "svg"],
             width=90,
             dynamic_resizing=False,
-        ).grid(row=0, column=1, sticky="w", padx=(6, 12))
+            command=self._on_format_changed,
+        )
+        fmt_menu.grid(row=0, column=1, sticky="w", padx=(6, 12))
+        self.tooltips.append(ToolTip(fmt_label, "Format d'export : 'auto' détecte depuis l'extension du fichier"))
+        self.tooltips.append(ToolTip(fmt_menu, "Format d'export : 'auto' détecte depuis l'extension du fichier"))
 
-        ctk.CTkLabel(wrap, text="Quality").grid(row=0, column=2, sticky="w")
-        ctk.CTkSlider(
+        quality_label = ctk.CTkLabel(wrap, text="Quality")
+        quality_label.grid(row=0, column=2, sticky="w")
+        quality_slider = ctk.CTkSlider(
             wrap,
             from_=1,
             to=100,
             number_of_steps=99,
             variable=self.output_quality_var,
             width=110,
-        ).grid(row=0, column=3, sticky="w", padx=(6, 12))
-        ctk.CTkLabel(wrap, textvariable=self.output_quality_var, width=30).grid(row=0, column=4, sticky="w")
+        )
+        quality_slider.grid(row=0, column=3, sticky="w", padx=(6, 12))
+        quality_val_label = ctk.CTkLabel(wrap, textvariable=self.output_quality_var, width=30)
+        quality_val_label.grid(row=0, column=4, sticky="w")
+        self.tooltips.append(ToolTip(quality_label, "Qualité de compression (JPEG/WEBP uniquement, 1-100)"))
+        self.tooltips.append(ToolTip(quality_slider, "Qualité de compression (JPEG/WEBP uniquement, 1-100)"))
+        self._export_quality_widgets = [quality_label, quality_slider, quality_val_label]
 
-        ctk.CTkLabel(wrap, text="MaxW").grid(row=0, column=5, sticky="e")
-        ctk.CTkEntry(wrap, textvariable=self.output_max_width_var, width=84).grid(row=0, column=6, sticky="e", padx=(6, 0))
+        maxw_label = ctk.CTkLabel(wrap, text="MaxW")
+        maxw_label.grid(row=0, column=5, sticky="e")
+        maxw_entry = ctk.CTkEntry(wrap, textvariable=self.output_max_width_var, width=84)
+        maxw_entry.grid(row=0, column=6, sticky="e", padx=(6, 0))
+        self.tooltips.append(ToolTip(maxw_label, "Largeur max en pixels de l'image exportée (vide = taille originale)"))
+        self.tooltips.append(ToolTip(maxw_entry, "Largeur max en pixels de l'image exportée (vide = taille originale)"))
+        self._export_maxw_widgets = [maxw_label, maxw_entry]
 
     def _create_field_control(
         self,
@@ -368,6 +431,9 @@ class QrStudioApp:
 
         self.tooltips.append(ToolTip(label, description))
         self.tooltips.append(ToolTip(info, description))
+
+        # Track labels for Full Dark graying
+        self.group_input_widgets[group_name].append(label_wrap)
 
         if field_name == "style_mode":
             var = tk.StringVar(value=str(default_value))
@@ -404,14 +470,22 @@ class QrStudioApp:
         self.group_input_widgets[group_name].append(entry)
 
         if self._is_color_field(default_value, field_name):
+            btn_swatch_wrap = ctk.CTkFrame(parent, fg_color="transparent")
+            btn_swatch_wrap.grid(row=row, column=2, sticky="w", padx=(8, 4), pady=5)
+
+            swatch = ctk.CTkFrame(btn_swatch_wrap, width=18, height=18, corner_radius=4)
+            swatch.grid(row=0, column=0, padx=(0, 6))
+            swatch.configure(fg_color=self._tuple_to_hex(default_value))
+            self.color_swatches[field_name] = swatch
+
             color_btn = ctk.CTkButton(
-                parent,
+                btn_swatch_wrap,
                 text="Palette",
                 width=72,
                 command=lambda n=field_name: self._choose_color(n),
             )
-            color_btn.grid(row=row, column=2, sticky="w", padx=(8, 4), pady=5)
-            self.group_input_widgets[group_name].append(color_btn)
+            color_btn.grid(row=0, column=1)
+            self.group_input_widgets[group_name].append(btn_swatch_wrap)
 
     # ------------------------------------------------------------------
     # Drag and drop logo
@@ -626,7 +700,67 @@ class QrStudioApp:
         else:
             var.set(f"{rgb[0]},{rgb[1]},{rgb[2]}")
 
+        self._update_color_swatch(field_name)
         self._schedule_auto_preview()
+
+    # ------------------------------------------------------------------
+    # Helpers: color swatches & format
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _tuple_to_hex(value) -> str:
+        """Convert a color tuple (R, G, B) or (R, G, B, A) to a hex string."""
+        if isinstance(value, tuple) and len(value) >= 3:
+            return "#%02x%02x%02x" % value[:3]
+        return "#808080"
+
+    def _update_color_swatch(self, field_name: str) -> None:
+        swatch = self.color_swatches.get(field_name)
+        if swatch is None:
+            return
+        var = self.graphic_vars.get(field_name)
+        if not isinstance(var, tk.StringVar):
+            return
+        raw = var.get().strip()
+        if raw.lower() in {"", "none", "null"}:
+            swatch.configure(fg_color="#808080")
+            return
+        try:
+            parts = [int(p.strip()) for p in raw.split(",") if p.strip()]
+            if len(parts) >= 3:
+                swatch.configure(fg_color="#%02x%02x%02x" % tuple(parts[:3]))
+        except (ValueError, TypeError):
+            pass
+
+    def _update_all_color_swatches(self) -> None:
+        for field_name in self.color_swatches:
+            self._update_color_swatch(field_name)
+
+    def _on_format_changed(self, choice: str) -> None:
+        fmt = choice.strip().lower()
+        # Auto-update the output extension
+        ext_map = {"png": ".png", "webp": ".webp", "jpeg": ".jpg", "svg": ".svg"}
+        if fmt in ext_map:
+            current = self.output_var.get().strip()
+            if current:
+                p = Path(current)
+                self.output_var.set(str(p.with_suffix(ext_map[fmt])))
+
+        # Disable Quality slider for SVG and PNG (lossless)
+        quality_state = "disabled" if fmt in {"svg", "png"} else "normal"
+        for w in self._export_quality_widgets:
+            try:
+                w.configure(state=quality_state)
+            except Exception:
+                pass
+
+        # Disable MaxW for SVG (vectorial)
+        maxw_state = "disabled" if fmt == "svg" else "normal"
+        for w in self._export_maxw_widgets:
+            try:
+                w.configure(state=maxw_state)
+            except Exception:
+                pass
 
     def _render_preview(self, show_errors: bool) -> None:
         try:
@@ -647,15 +781,12 @@ class QrStudioApp:
         target_w = max(280, self.preview_image_label.winfo_width() - 24)
         target_h = max(280, self.preview_image_label.winfo_height() - 24)
 
-        high_res = image.copy()
-        high_res.thumbnail((target_w * 2, target_h * 2), Image.LANCZOS)
-
-        display = high_res.copy()
+        display = image.copy()
         display.thumbnail((target_w, target_h), Image.LANCZOS)
 
         self._preview_ctk_image = ctk.CTkImage(
-            light_image=high_res,
-            dark_image=high_res,
+            light_image=display,
+            dark_image=display,
             size=(display.width, display.height),
         )
         self.preview_image_label.configure(image=self._preview_ctk_image, text="")
@@ -673,6 +804,7 @@ class QrStudioApp:
             "png": ("PNG", ".png"),
             "webp": ("WEBP", ".webp"),
             "jpeg": ("JPEG", ".jpg"),
+            "svg": ("SVG", ".svg"),
             "auto": ("", ""),
         }
         if fmt not in format_map:
@@ -693,22 +825,28 @@ class QrStudioApp:
             target_output, target_format = self._resolve_export_target(cfg.output_path)
             quality = int(self.output_quality_var.get())
 
-            BrandedQRGenerator(cfg).save(
-                output_path=target_output,
-                image_format=target_format,
-                max_width=max_width,
-                quality=quality,
-            )
+            gen = BrandedQRGenerator(cfg)
+
+            if target_format == "SVG":
+                gen.save_svg(target_output)
+            else:
+                gen.save(
+                    output_path=target_output,
+                    image_format=target_format,
+                    max_width=max_width,
+                    quality=quality,
+                )
             cfg.output_path = target_output
             self.output_var.set(str(target_output))
         except Exception as exc:
-            self._set_status(f"Generation failed: {exc}", is_error=True)
-            messagebox.showerror("Generation error", str(exc))
+            self._set_status(f"Export failed: {exc}", is_error=True)
+            messagebox.showerror("Export error", str(exc))
             return
 
-        self._set_status(f"Generated: {cfg.output_path}")
-        self._render_preview(show_errors=False)
-        messagebox.showinfo("Success", f"QR generated:\n{cfg.output_path}")
+        self._set_status(f"✅  Exported: {cfg.output_path}")
+        if target_format != "SVG":
+            self._render_preview(show_errors=False)
+        messagebox.showinfo("Success", f"QR exported:\n{cfg.output_path}")
 
     # ------------------------------------------------------------------
     # Presets + auto preview
@@ -734,21 +872,31 @@ class QrStudioApp:
         enabled = mode == "full_dark_artistic"
 
         desired_state = "normal" if enabled else "disabled"
+        disabled_text = ("#b0b0b0", "#4a4a4a")
+        normal_text = ("#1f2937", "#d1d5db")
         for widget in self.group_input_widgets.get("Full Dark", []):
             try:
                 widget.configure(state=desired_state)
             except Exception:
-                continue
+                pass
+            # Grey out label text for visual feedback
+            try:
+                if isinstance(widget, (ctk.CTkLabel, ctk.CTkFrame)):
+                    for child in widget.winfo_children():
+                        if isinstance(child, ctk.CTkLabel):
+                            child.configure(text_color=normal_text if enabled else disabled_text)
+            except Exception:
+                pass
 
         if self.full_dark_hint_label is not None:
             if enabled:
                 self.full_dark_hint_label.configure(
-                    text="Full Dark parameters active",
+                    text="✅  Paramètres Full Dark actifs",
                     text_color=("#166534", "#86efac"),
                 )
             else:
                 self.full_dark_hint_label.configure(
-                    text="Active only when style_mode = full_dark_artistic",
+                    text="⚠  Actif uniquement en mode full_dark_artistic",
                     text_color=("#64748b", "#94a3b8"),
                 )
 
@@ -770,6 +918,7 @@ class QrStudioApp:
             self._suspend_auto_preview = False
 
         self._update_full_dark_section_state()
+        self._update_all_color_swatches()
         self._schedule_auto_preview()
 
     def _register_var_watchers(self) -> None:
@@ -803,12 +952,19 @@ class QrStudioApp:
         self._preview_job_id = self.root.after(280, self._render_preview_silent)
 
     def _on_preview_container_resize(self, _event=None) -> None:
+        new_size = (
+            self.preview_image_label.winfo_width(),
+            self.preview_image_label.winfo_height(),
+        )
+        if new_size == self._last_preview_size:
+            return
+        self._last_preview_size = new_size
         self._schedule_preview_resize()
 
     def _schedule_preview_resize(self) -> None:
         if self._resize_preview_job_id is not None:
             self.root.after_cancel(self._resize_preview_job_id)
-        self._resize_preview_job_id = self.root.after(90, self._refresh_preview_from_cache)
+        self._resize_preview_job_id = self.root.after(200, self._refresh_preview_from_cache)
 
     def _refresh_preview_from_cache(self) -> None:
         self._resize_preview_job_id = None
