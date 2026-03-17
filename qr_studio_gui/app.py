@@ -46,6 +46,7 @@ WINDOW_MIN_WIDTH = 1120
 WINDOW_MIN_HEIGHT = 760
 RIGHT_PANEL_RATIO_MIN = 0.28
 RIGHT_PANEL_RATIO_MAX = 0.62
+BUILTIN_LOGO_TOKEN_PREFIX = "builtin:"
 
 
 class QrStudioApp:
@@ -113,14 +114,17 @@ class QrStudioApp:
         self._load_preset(self.preset_var.get())
         self._register_var_watchers()
         self._sync_logo_library_selection()
+        if self.preset_var.get().strip() == "black_bg_safe":
+            self._apply_logo_recommended_preset(self.logo_library_var.get(), show_status=False)
 
         self.root.bind("<Configure>", self._on_root_configure, add=True)
         self.preview_image_label.bind("<Configure>", self._on_preview_container_resize, add=True)
         self._schedule_auto_preview()
 
     def _default_logo_path(self) -> str:
-        default_logo = self._builtin_logo_paths.get("Phusis")
-        return str(default_logo) if default_logo is not None else ""
+        if "Phusis" in self._builtin_logo_paths:
+            return self._builtin_logo_token_for_label("Phusis")
+        return ""
 
     def _discover_builtin_logos(self) -> Dict[str, Optional[Path]]:
         root = self._project_root()
@@ -152,6 +156,25 @@ class QrStudioApp:
     def _logo_library_values(self) -> list[str]:
         return ["Custom"] + list(self._builtin_logo_paths.keys())
 
+    @staticmethod
+    def _builtin_logo_token_for_label(label: str) -> str:
+        if label == "No logo":
+            return "none"
+        slug = (
+            label.strip()
+            .lower()
+            .replace(" ", "_")
+            .replace("-", "_")
+        )
+        return f"{BUILTIN_LOGO_TOKEN_PREFIX}{slug}"
+
+    def _builtin_logo_label_from_token(self, token: str) -> Optional[str]:
+        norm = token.strip().lower()
+        for label in self._builtin_logo_paths.keys():
+            if norm == self._builtin_logo_token_for_label(label):
+                return label
+        return None
+
     def _project_root(self) -> Path:
         if getattr(sys, "frozen", False):
             base = getattr(sys, "_MEIPASS", None)
@@ -164,7 +187,7 @@ class QrStudioApp:
         ico_path = root / "assets" / "app_icon.ico"
         png_candidates = [
             root / "assets" / "app_icon.png",
-            root / "logo_phusis.png",
+            root / "assets" / "logos" / "logo_phusis.png",
         ]
 
         if ico_path.exists():
@@ -762,11 +785,30 @@ class QrStudioApp:
                 self.logo_var.set("none")
                 self._set_status("Logo intégré: aucun logo")
             else:
-                self.logo_var.set(str(selected))
+                self.logo_var.set(self._builtin_logo_token_for_label(choice))
                 self._set_status(f"Logo intégré: {choice}")
         finally:
             self._logo_library_sync_lock = False
+        self._apply_logo_recommended_preset(choice, show_status=True)
         self._schedule_auto_preview()
+
+    def _apply_logo_recommended_preset(self, choice: str, show_status: bool = True) -> None:
+        recommended_map = {
+            "Phusis": "full_dark_artistic",
+            "Romane Pena": "pena_psychologue",
+        }
+        preset_name = recommended_map.get(choice)
+        if not preset_name:
+            return
+        if preset_name not in self._all_preset_names():
+            return
+        if self.preset_var.get().strip() == preset_name:
+            return
+
+        self.preset_var.set(preset_name)
+        self._load_preset(preset_name)
+        if show_status:
+            self._set_status(f"Preset auto: {preset_name} (logo {choice})")
 
     def _sync_logo_library_selection(self) -> None:
         if self._logo_library_sync_lock:
@@ -778,6 +820,10 @@ class QrStudioApp:
 
         if lowered in {"", "none", "null", "sans"}:
             target_choice = "No logo"
+        elif lowered.startswith(BUILTIN_LOGO_TOKEN_PREFIX):
+            label = self._builtin_logo_label_from_token(lowered)
+            if label is not None:
+                target_choice = label
         else:
             raw_path = Path(raw)
             try:
@@ -877,8 +923,17 @@ class QrStudioApp:
 
     def _resolve_logo_path(self) -> Optional[Path]:
         raw = self.logo_var.get().strip()
-        if raw.lower() in {"", "none", "null", "sans"}:
+        lowered = raw.lower()
+        if lowered in {"", "none", "null", "sans"}:
             return None
+        if lowered.startswith(BUILTIN_LOGO_TOKEN_PREFIX):
+            label = self._builtin_logo_label_from_token(lowered)
+            if label is None:
+                raise ValueError(f"Builtin logo inconnu: {raw}")
+            resolved = self._builtin_logo_paths.get(label)
+            if resolved is None:
+                return None
+            return resolved
         return Path(raw)
 
     def _parse_positive_int(self, raw: str, field_name: str) -> int:

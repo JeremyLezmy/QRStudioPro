@@ -4,8 +4,21 @@ generated_qrcode
 
 __pycache__/*
 __pycache__
+*.pyc
+*.pyo
 
 build/
 dist/
 *.spec
 assets/*.iconset/
+
+.venv/
+venv/
+
+.DS_Store
+Thumbs.db
+
+.idea/
+.vscode/
+
+.pytest_cache/

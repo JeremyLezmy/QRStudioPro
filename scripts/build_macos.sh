@@ -8,7 +8,7 @@ cd "$PROJECT_ROOT"
 ICON_PNG="assets/app_icon.png"
 ICON_ICNS="assets/app_icon.icns"
 
-if [[ -f "$ICON_PNG" && ! -f "$ICON_ICNS" ]]; then
+if [[ -f "$ICON_PNG" ]]; then
   "$PYTHON_EXE" scripts/make_icons.py --source "$ICON_PNG" --icns "$ICON_ICNS"
 fi
 
@@ -21,7 +21,6 @@ ARGS=(
   --collect-all customtkinter
   --collect-all tkinterdnd2
   --add-data "assets:assets"
-  --add-data "logo_phusis.png:."
   --osx-bundle-identifier "com.phusis.qrstudiopro"
   qr_gui.py
 )

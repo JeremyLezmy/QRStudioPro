@@ -5,7 +5,7 @@
 Installe les dépendances dans ton environnement Python (sur chaque OS):
 
 ```bash
-pip install pyinstaller customtkinter tkinterdnd2 pillow qrcode numpy opencv-python
+pip install -r requirements.txt
 ```
 
 ## 2) Icône de l'application
@@ -56,4 +56,14 @@ Sortie:
 - L'icône de fenêtre est aussi chargée au runtime depuis:
   - `assets/app_icon.ico` (prioritaire)
   - sinon `assets/app_icon.png`
-  - sinon `logo_phusis.png`
+  - sinon `assets/logos/logo_phusis.png`
+- Le champ logo du GUI accepte aussi les tokens `builtin:*` (ex: `builtin:phusis`) au lieu d'exposer les chemins internes.
+
+## 6) GitHub Actions (build auto)
+
+Workflow inclus: `.github/workflows/desktop-build-release.yml`
+
+- `workflow_dispatch`: build manuel Windows + macOS avec artifacts.
+- `push` de tag `v*`: build puis création d'une GitHub Release avec:
+  - `QRStudioPro-windows.zip`
+  - `QRStudioPro-macos.zip`

@@ -9,7 +9,7 @@ Set-Location $ProjectRoot
 $iconPng = "assets/app_icon.png"
 $iconIco = "assets/app_icon.ico"
 
-if ((Test-Path $iconPng) -and -not (Test-Path $iconIco)) {
+if (Test-Path $iconPng) {
     & $PythonExe scripts/make_icons.py --source $iconPng --ico $iconIco
 }
 
@@ -22,7 +22,6 @@ $args = @(
     "--collect-all", "customtkinter",
     "--collect-all", "tkinterdnd2",
     "--add-data", "assets;assets",
-    "--add-data", "logo_phusis.png;.",
     "qr_gui.py"
 )
 

@@ -5,17 +5,45 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from PIL import Image
+from PIL import Image, ImageFilter
 
 
-def square_rgba(source: Path, target_size: int = 1024) -> Image.Image:
+def _alpha_bbox(img: Image.Image) -> tuple[int, int, int, int] | None:
+    if img.mode != "RGBA":
+        img = img.convert("RGBA")
+    alpha = img.getchannel("A")
+    return alpha.getbbox()
+
+
+def square_rgba(source: Path, target_size: int = 1024, padding_ratio: float = 0.1) -> Image.Image:
     img = Image.open(source).convert("RGBA")
-    side = max(img.width, img.height)
-    canvas = Image.new("RGBA", (side, side), (0, 0, 0, 0))
-    canvas.alpha_composite(img, ((side - img.width) // 2, (side - img.height) // 2))
-    if side != target_size:
-        canvas = canvas.resize((target_size, target_size), Image.LANCZOS)
+
+    bbox = _alpha_bbox(img)
+    if bbox is not None:
+        img = img.crop(bbox)
+
+    work_size = max(1, int(target_size * max(0.0, min(0.4, padding_ratio))))
+    icon_area = target_size - (2 * work_size)
+
+    scale = min(icon_area / max(1, img.width), icon_area / max(1, img.height))
+    resized = img.resize(
+        (max(1, int(img.width * scale)), max(1, int(img.height * scale))),
+        Image.LANCZOS,
+    )
+
+    canvas = Image.new("RGBA", (target_size, target_size), (0, 0, 0, 0))
+    canvas.alpha_composite(
+        resized,
+        ((target_size - resized.width) // 2, (target_size - resized.height) // 2),
+    )
     return canvas
+
+
+def _icon_resize(base: Image.Image, size: int) -> Image.Image:
+    out = base.resize((size, size), Image.LANCZOS)
+    if size <= 64:
+        out = out.filter(ImageFilter.UnsharpMask(radius=1.0, percent=170, threshold=1))
+    return out
 
 
 def build_ico(base: Image.Image, out_ico: Path) -> None:
@@ -45,7 +73,7 @@ def build_icns(base: Image.Image, out_icns: Path) -> bool:
         "icon_512x512@2x.png": 1024,
     }
     for filename, size in mapping.items():
-        base.resize((size, size), Image.LANCZOS).save(iconset_dir / filename, format="PNG")
+        _icon_resize(base, size).save(iconset_dir / filename, format="PNG")
 
     subprocess.run(
         [iconutil, "-c", "icns", str(iconset_dir), "-o", str(out_icns)],
@@ -59,6 +87,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--source", default="assets/app_icon.png", help="Source PNG logo path")
     parser.add_argument("--ico", default="assets/app_icon.ico", help="Output ICO path")
     parser.add_argument("--icns", default="assets/app_icon.icns", help="Output ICNS path")
+    parser.add_argument(
+        "--padding-ratio",
+        type=float,
+        default=0.10,
+        help="Inner padding ratio for the icon content (0.0 to 0.4).",
+    )
     return parser.parse_args()
 
 
@@ -68,7 +102,7 @@ def main() -> int:
     if not src.exists():
         raise FileNotFoundError(f"Source icon not found: {src}")
 
-    base = square_rgba(src, target_size=1024)
+    base = square_rgba(src, target_size=1024, padding_ratio=args.padding_ratio)
     build_ico(base, Path(args.ico))
     icns_ok = build_icns(base, Path(args.icns))
 
