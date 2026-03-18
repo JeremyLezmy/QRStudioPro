@@ -74,6 +74,7 @@ input,
 select {
   font: inherit;
   max-width: 100%;
+  -webkit-tap-highlight-color: transparent;
 }
 
 input,
@@ -270,6 +271,29 @@ button.danger {
   background: var(--accent);
   color: #f7fffd;
   border-color: rgba(7, 84, 74, 0.2);
+}
+
+.section-tab:focus,
+.section-tab:focus-visible,
+.group-tab:focus,
+.group-tab:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+.section-tab.active:focus,
+.section-tab.active:focus-visible,
+.section-tab.active:active {
+  background: var(--accent);
+  color: #f7fffd;
+  border-color: rgba(7, 84, 74, 0.2);
+}
+
+.group-tab.active:focus,
+.group-tab.active:focus-visible,
+.group-tab.active:active {
+  background: #1b6f62;
+  color: #f6fffc;
 }
 
 .drop-zone {
