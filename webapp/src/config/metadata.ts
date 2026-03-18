@@ -1,0 +1,57 @@
+import type { FieldGroup, FieldSpec } from '../types/qr';
+
+export const GROUP_ORDER: FieldGroup[] = ['General', 'Modules', 'Full Dark', 'Logo', 'Medallion', 'FX'];
+
+export const FIELD_SPECS: FieldSpec[] = [
+  { key: 'style_mode', label: 'Style Mode', description: "Mode principal du rendu QR.", group: 'General', type: 'style_mode' },
+  { key: 'transparent_output', label: 'Transparent', description: 'Rend le fond transparent quand possible.', group: 'General', type: 'boolean' },
+  { key: 'background_rgba', label: 'Background', description: 'Couleur de fond globale.', group: 'General', type: 'color4' },
+  { key: 'plate_color_rgba', label: 'Plate Color', description: 'Couleur de plaque en mode black_bg_safe.', group: 'General', type: 'color4' },
+  { key: 'outer_plate_enabled', label: 'Outer Plate', description: 'Active la plaque externe.', group: 'General', type: 'boolean' },
+  { key: 'outer_plate_margin', label: 'Plate Margin', description: 'Marge interne de la plaque.', group: 'General', type: 'int', min: 0, max: 300, step: 1 },
+
+  { key: 'gradient_start_rgb', label: 'Gradient Start', description: 'Couleur de départ du gradient modules.', group: 'Modules', type: 'color3' },
+  { key: 'gradient_end_rgb', label: 'Gradient End', description: 'Couleur de fin du gradient modules.', group: 'Modules', type: 'color3' },
+  { key: 'gradient_mix_base_rgb', label: 'Mix Base', description: "Couleur de base du mix (None possible).", group: 'Modules', type: 'optional_color3' },
+  { key: 'gradient_mix_ratio', label: 'Mix Ratio', description: 'Ratio de mix gradient/base.', group: 'Modules', type: 'float', min: 0, max: 1, step: 0.01 },
+  { key: 'module_shape', label: 'Module Shape', description: 'Forme des modules internes.', group: 'Modules', type: 'module_shape' },
+  { key: 'module_scale', label: 'Module Scale', description: 'Taille relative des modules.', group: 'Modules', type: 'float', min: 0.2, max: 1.25, step: 0.01 },
+  { key: 'module_corner_ratio', label: 'Corner Ratio', description: 'Arrondi des modules rounded.', group: 'Modules', type: 'float', min: 0, max: 1, step: 0.01 },
+  { key: 'finder_outer_rgb', label: 'Finder Outer', description: 'Couleur externe des finder patterns.', group: 'Modules', type: 'color3' },
+  { key: 'finder_center_rgb', label: 'Finder Center', description: 'Couleur centre des finder patterns.', group: 'Modules', type: 'color3' },
+
+  { key: 'light_module_start_rgb', label: 'Light Start', description: 'Gradient start full dark.', group: 'Full Dark', type: 'color3' },
+  { key: 'light_module_end_rgb', label: 'Light End', description: 'Gradient end full dark.', group: 'Full Dark', type: 'color3' },
+  { key: 'full_dark_finder_outer_rgb', label: 'FD Finder Outer', description: 'Finder outer en full dark.', group: 'Full Dark', type: 'color3' },
+  { key: 'full_dark_finder_center_rgb', label: 'FD Finder Center', description: 'Finder center en full dark.', group: 'Full Dark', type: 'color3' },
+
+  { key: 'logo_scale', label: 'Logo Scale', description: 'Taille relative du logo.', group: 'Logo', type: 'float', min: 0.05, max: 0.4, step: 0.001 },
+  { key: 'logo_keep_original', label: 'Keep Original', description: 'Conserve le logo sans traitement destructif.', group: 'Logo', type: 'boolean' },
+  { key: 'logo_remove_dark_bg', label: 'Remove Dark BG', description: 'Supprime les pixels très sombres du logo.', group: 'Logo', type: 'boolean' },
+  { key: 'logo_dark_bg_threshold', label: 'Dark Threshold', description: 'Seuil de détection du fond sombre.', group: 'Logo', type: 'int', min: 0, max: 255, step: 1 },
+  { key: 'recolor_logo', label: 'Recolor Logo', description: 'Recolorise le logo en gradient.', group: 'Logo', type: 'boolean' },
+  { key: 'recolor_logo_start_rgb', label: 'Recolor Start', description: 'Début gradient recolor logo.', group: 'Logo', type: 'color3' },
+  { key: 'recolor_logo_end_rgb', label: 'Recolor End', description: 'Fin gradient recolor logo.', group: 'Logo', type: 'color3' },
+
+  { key: 'medallion_enabled', label: 'Medallion', description: 'Active la pastille autour du logo.', group: 'Medallion', type: 'boolean' },
+  { key: 'medallion_padding_ratio', label: 'Padding', description: 'Padding de la pastille.', group: 'Medallion', type: 'float', min: 0, max: 0.12, step: 0.001 },
+  { key: 'medallion_fill_rgba', label: 'Fill Color', description: 'Couleur de fond de la pastille.', group: 'Medallion', type: 'color4' },
+  { key: 'medallion_outline_rgba', label: 'Outline Color', description: 'Couleur de contour de la pastille.', group: 'Medallion', type: 'color4' },
+  { key: 'medallion_outline_width', label: 'Outline Width', description: 'Épaisseur du contour.', group: 'Medallion', type: 'int', min: 0, max: 12, step: 1 },
+  { key: 'medallion_corner_ratio', label: 'Corner Ratio', description: 'Arrondi de la pastille.', group: 'Medallion', type: 'float', min: 0, max: 0.5, step: 0.01 },
+  { key: 'medallion_highlight_enabled', label: 'Highlight', description: 'Reflet brillant sur pastille.', group: 'Medallion', type: 'boolean' },
+  { key: 'medallion_highlight_rgba', label: 'Highlight Color', description: 'Couleur du reflet.', group: 'Medallion', type: 'color4' },
+  { key: 'medallion_highlight_height_ratio', label: 'Highlight Height', description: 'Hauteur relative du reflet.', group: 'Medallion', type: 'float', min: 0, max: 1, step: 0.01 },
+  { key: 'dark_medallion_fill_rgba', label: 'Dark Fill', description: 'Fond pastille mode full dark.', group: 'Medallion', type: 'color4' },
+  { key: 'dark_medallion_outline_rgba', label: 'Dark Outline', description: 'Contour pastille mode full dark.', group: 'Medallion', type: 'color4' },
+
+  { key: 'shadow_enabled', label: 'Shadow', description: 'Active l’ombre portée.', group: 'FX', type: 'boolean' },
+  { key: 'shadow_color_rgba', label: 'Shadow Color', description: 'Couleur de l’ombre.', group: 'FX', type: 'color4' },
+  { key: 'shadow_blur_radius', label: 'Shadow Blur', description: 'Flou de l’ombre.', group: 'FX', type: 'int', min: 0, max: 120, step: 1 },
+  { key: 'shadow_offset', label: 'Shadow Offset', description: 'Décalage X,Y de l’ombre.', group: 'FX', type: 'offset2' },
+  { key: 'shadow_canvas_padding', label: 'Shadow Padding', description: 'Padding canvas pour ombre.', group: 'FX', type: 'int', min: 0, max: 200, step: 1 },
+  { key: 'glow_enabled', label: 'Glow', description: 'Active le halo.', group: 'FX', type: 'boolean' },
+  { key: 'glow_fill_rgba', label: 'Glow Color', description: 'Couleur du halo.', group: 'FX', type: 'color4' },
+  { key: 'glow_blur_radius', label: 'Glow Blur', description: 'Flou du halo.', group: 'FX', type: 'int', min: 0, max: 180, step: 1 },
+  { key: 'glow_inset', label: 'Glow Inset', description: 'Inset du halo.', group: 'FX', type: 'int', min: 0, max: 300, step: 1 },
+];

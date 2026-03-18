@@ -20,3 +20,8 @@ Thumbs.db
 .vscode/
 
 .pytest_cache/
+
+# Node / Vite
+node_modules/
+*.tsbuildinfo
+.vite/

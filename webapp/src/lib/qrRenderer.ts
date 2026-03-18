@@ -1,0 +1,708 @@
+import jsQR from 'jsqr';
+import qrcode from 'qrcode-generator';
+import { clamp, clamp01, clamp8, color3ToCss, color4ToCss, mixColor3 } from './color';
+import type { Color3, GraphicConfig, OutputFormat } from '../types/qr';
+
+export interface LogoAsset {
+  kind: 'none' | 'url';
+  url?: string;
+}
+
+export interface RenderRequest {
+  url: string;
+  boxSize: number;
+  border: number;
+  graphic: GraphicConfig;
+  logo: LogoAsset;
+  decodeCheck: boolean;
+  quietLogs: boolean;
+}
+
+export interface RenderResult {
+  canvas: HTMLCanvasElement;
+  decodedText: string | null;
+  modulesCount: number;
+}
+
+interface QRMatrixInfo {
+  matrix: boolean[][];
+  modules: number;
+  cell: number;
+  border: number;
+  width: number;
+  height: number;
+  offset: number;
+  finderSet: Set<string>;
+}
+
+const FINDER_REGIONS: [number, number][] = [
+  [0, 0],
+  [1, 0],
+  [0, 1],
+];
+
+function createCanvas(width: number, height: number): HTMLCanvasElement {
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(width));
+  canvas.height = Math.max(1, Math.round(height));
+  return canvas;
+}
+
+function matrixKey(x: number, y: number): string {
+  return `${x}:${y}`;
+}
+
+function buildMatrixInfo(url: string, boxSize: number, border: number): QRMatrixInfo {
+  const qr = qrcode(0, 'H');
+  qr.addData(url);
+  qr.make();
+
+  const modules = qr.getModuleCount();
+  const matrix: boolean[][] = Array.from({ length: modules }, (_, y) =>
+    Array.from({ length: modules }, (_, x) => qr.isDark(y, x)),
+  );
+
+  const cell = Math.max(1, Math.round(boxSize));
+  const offset = Math.round(border) * cell;
+  const width = (modules + 2 * Math.round(border)) * cell;
+  const height = width;
+
+  const finderSet = new Set<string>();
+  for (const [fxIndex, fyIndex] of FINDER_REGIONS) {
+    const fx = fxIndex === 1 ? modules - 7 : 0;
+    const fy = fyIndex === 1 ? modules - 7 : 0;
+    for (let my = fy; my < fy + 7; my += 1) {
+      for (let mx = fx; mx < fx + 7; mx += 1) {
+        finderSet.add(matrixKey(mx, my));
+      }
+    }
+  }
+
+  return {
+    matrix,
+    modules,
+    cell,
+    border: Math.round(border),
+    width,
+    height,
+    offset,
+    finderSet,
+  };
+}
+
+function gradientColorAt(
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  start: Color3,
+  end: Color3,
+  mixBase: Color3 | null,
+  mixRatio: number,
+): Color3 {
+  const t = clamp01((x + y) / Math.max(1, width + height));
+  const grad = mixColor3(start, end, t);
+  if (!mixBase) return grad;
+  const ratio = clamp01(mixRatio);
+  return [
+    clamp8(ratio * mixBase[0] + (1 - ratio) * grad[0]),
+    clamp8(ratio * mixBase[1] + (1 - ratio) * grad[1]),
+    clamp8(ratio * mixBase[2] + (1 - ratio) * grad[2]),
+  ];
+}
+
+function drawRoundedRect(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  radius: number,
+): void {
+  const r = Math.max(0, Math.min(radius, Math.min(w, h) / 2));
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+function drawModuleShape(
+  ctx: CanvasRenderingContext2D,
+  shape: GraphicConfig['module_shape'],
+  x: number,
+  y: number,
+  size: number,
+  cornerRatio: number,
+): void {
+  if (shape === 'dot') {
+    ctx.beginPath();
+    ctx.ellipse(x + size / 2, y + size / 2, size / 2, size / 2, 0, 0, Math.PI * 2);
+    ctx.fill();
+    return;
+  }
+
+  if (shape === 'rounded') {
+    const radius = Math.max(1, (size / 2) * clamp01(cornerRatio));
+    drawRoundedRect(ctx, x, y, size, size, radius);
+    ctx.fill();
+    return;
+  }
+
+  ctx.fillRect(x, y, size, size);
+}
+
+function drawFinderPatterns(
+  ctx: CanvasRenderingContext2D,
+  info: QRMatrixInfo,
+  outerColor: Color3,
+  centerColor: Color3,
+): void {
+  const finderPositions: [number, number][] = [
+    [info.offset, info.offset],
+    [info.width - info.offset - 7 * info.cell, info.offset],
+    [info.offset, info.height - info.offset - 7 * info.cell],
+  ];
+
+  ctx.fillStyle = color3ToCss(outerColor);
+  for (const [fx, fy] of finderPositions) {
+    ctx.fillRect(fx, fy, info.cell, 7 * info.cell);
+    ctx.fillRect(fx + 6 * info.cell, fy, info.cell, 7 * info.cell);
+    ctx.fillRect(fx, fy, 7 * info.cell, info.cell);
+    ctx.fillRect(fx, fy + 6 * info.cell, 7 * info.cell, info.cell);
+  }
+
+  ctx.fillStyle = color3ToCss(centerColor);
+  for (const [fx, fy] of finderPositions) {
+    ctx.fillRect(fx + 2 * info.cell, fy + 2 * info.cell, 3 * info.cell, 3 * info.cell);
+  }
+}
+
+function drawDataModules(
+  ctx: CanvasRenderingContext2D,
+  info: QRMatrixInfo,
+  cfg: GraphicConfig,
+  gradientStart: Color3,
+  gradientEnd: Color3,
+  gradientMixBase: Color3 | null,
+  gradientMixRatio: number,
+): void {
+  const scale = clamp(cfg.module_scale, 0.2, 1.25);
+  const drawSize = info.cell * scale;
+  const pad = (info.cell - drawSize) / 2;
+
+  for (let my = 0; my < info.modules; my += 1) {
+    for (let mx = 0; mx < info.modules; mx += 1) {
+      if (!info.matrix[my][mx]) continue;
+      if (info.finderSet.has(matrixKey(mx, my))) continue;
+
+      const x0 = info.offset + mx * info.cell + pad;
+      const y0 = info.offset + my * info.cell + pad;
+      const cx = Math.round(x0 + drawSize / 2);
+      const cy = Math.round(y0 + drawSize / 2);
+
+      const color = gradientColorAt(
+        cx,
+        cy,
+        info.width,
+        info.height,
+        gradientStart,
+        gradientEnd,
+        gradientMixBase,
+        gradientMixRatio,
+      );
+
+      ctx.fillStyle = color3ToCss(color);
+      drawModuleShape(ctx, cfg.module_shape, x0, y0, drawSize, cfg.module_corner_ratio);
+    }
+  }
+}
+
+function applyGlow(base: HTMLCanvasElement, cfg: GraphicConfig): HTMLCanvasElement {
+  if (!cfg.glow_enabled) return base;
+  const out = createCanvas(base.width, base.height);
+  const ctx = out.getContext('2d');
+  const glow = createCanvas(base.width, base.height);
+  const gctx = glow.getContext('2d');
+  if (!ctx || !gctx) return base;
+
+  const inset = Math.max(0, cfg.glow_inset);
+  gctx.filter = `blur(${Math.max(0, cfg.glow_blur_radius)}px)`;
+  gctx.fillStyle = color4ToCss(cfg.glow_fill_rgba);
+  gctx.beginPath();
+  gctx.ellipse(
+    base.width / 2,
+    base.height / 2,
+    Math.max(1, (base.width - 2 * inset) / 2),
+    Math.max(1, (base.height - 2 * inset) / 2),
+    0,
+    0,
+    Math.PI * 2,
+  );
+  gctx.fill();
+  gctx.filter = 'none';
+
+  ctx.drawImage(base, 0, 0);
+  ctx.drawImage(glow, 0, 0);
+  return out;
+}
+
+function applyShadow(base: HTMLCanvasElement, cfg: GraphicConfig): HTMLCanvasElement {
+  if (!cfg.shadow_enabled) return base;
+
+  const pad = Math.max(0, cfg.shadow_canvas_padding);
+  const out = createCanvas(base.width + pad, base.height + pad);
+  const ctx = out.getContext('2d');
+  if (!ctx) return base;
+
+  const dx = cfg.shadow_offset[0];
+  const dy = cfg.shadow_offset[1];
+
+  const px = Math.floor(pad / 2);
+  const py = Math.floor(pad / 2);
+
+  ctx.shadowColor = color4ToCss(cfg.shadow_color_rgba);
+  ctx.shadowBlur = Math.max(0, cfg.shadow_blur_radius);
+  ctx.shadowOffsetX = dx;
+  ctx.shadowOffsetY = dy;
+  ctx.drawImage(base, px, py);
+
+  ctx.shadowColor = 'transparent';
+  ctx.shadowBlur = 0;
+  ctx.shadowOffsetX = 0;
+  ctx.shadowOffsetY = 0;
+  ctx.drawImage(base, px, py);
+  return out;
+}
+
+function composeOnBackground(base: HTMLCanvasElement, cfg: GraphicConfig): HTMLCanvasElement {
+  if (cfg.transparent_output) return base;
+  const out = createCanvas(base.width, base.height);
+  const ctx = out.getContext('2d');
+  if (!ctx) return base;
+  ctx.fillStyle = color4ToCss(cfg.background_rgba);
+  ctx.fillRect(0, 0, out.width, out.height);
+  ctx.drawImage(base, 0, 0);
+  return out;
+}
+
+function composeBlackBgSafe(qr: HTMLCanvasElement, cfg: GraphicConfig): HTMLCanvasElement {
+  if (!cfg.outer_plate_enabled) {
+    const withShadow = cfg.shadow_enabled ? applyShadow(qr, cfg) : qr;
+    return composeOnBackground(withShadow, cfg);
+  }
+
+  const margin = Math.max(0, cfg.outer_plate_margin);
+  const plate = createCanvas(qr.width + 2 * margin, qr.height + 2 * margin);
+  const pctx = plate.getContext('2d');
+  if (!pctx) return qr;
+
+  pctx.fillStyle = color4ToCss(cfg.plate_color_rgba);
+  pctx.fillRect(0, 0, plate.width, plate.height);
+  pctx.drawImage(qr, margin, margin);
+
+  const withShadow = cfg.shadow_enabled ? applyShadow(plate, cfg) : plate;
+  if (cfg.transparent_output) return withShadow;
+
+  const out = createCanvas(withShadow.width, withShadow.height);
+  const octx = out.getContext('2d');
+  if (!octx) return withShadow;
+
+  octx.fillStyle = color4ToCss(cfg.background_rgba);
+  octx.fillRect(0, 0, out.width, out.height);
+  octx.drawImage(withShadow, 0, 0);
+  return out;
+}
+
+function renderDarkGradientQR(info: QRMatrixInfo, cfg: GraphicConfig): HTMLCanvasElement {
+  const out = createCanvas(info.width, info.height);
+  const ctx = out.getContext('2d');
+  if (!ctx) return out;
+
+  if (!cfg.transparent_output) {
+    ctx.fillStyle = 'rgb(255 255 255)';
+    ctx.fillRect(0, 0, out.width, out.height);
+  }
+
+  drawDataModules(
+    ctx,
+    info,
+    cfg,
+    cfg.gradient_start_rgb,
+    cfg.gradient_end_rgb,
+    cfg.gradient_mix_base_rgb,
+    cfg.gradient_mix_ratio,
+  );
+  drawFinderPatterns(ctx, info, cfg.finder_outer_rgb, cfg.finder_center_rgb);
+  return out;
+}
+
+function renderFullDarkQR(info: QRMatrixInfo, cfg: GraphicConfig): HTMLCanvasElement {
+  const out = createCanvas(info.width, info.height);
+  const ctx = out.getContext('2d');
+  if (!ctx) return out;
+
+  ctx.fillStyle = color4ToCss(cfg.background_rgba);
+  ctx.fillRect(0, 0, out.width, out.height);
+
+  drawDataModules(
+    ctx,
+    info,
+    cfg,
+    cfg.light_module_start_rgb,
+    cfg.light_module_end_rgb,
+    null,
+    0,
+  );
+  drawFinderPatterns(ctx, info, cfg.full_dark_finder_outer_rgb, cfg.full_dark_finder_center_rgb);
+  return out;
+}
+
+function loadImage(url: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    // Allow CORS-enabled remote logos and keep built-in assets/data URLs working.
+    img.crossOrigin = 'anonymous';
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error(`Impossible de charger le logo: ${url}`));
+    img.src = url;
+  });
+}
+
+function cropAlphaBounds(canvas: HTMLCanvasElement): HTMLCanvasElement {
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return canvas;
+  const data = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+  let minX = canvas.width;
+  let minY = canvas.height;
+  let maxX = -1;
+  let maxY = -1;
+
+  for (let y = 0; y < canvas.height; y += 1) {
+    for (let x = 0; x < canvas.width; x += 1) {
+      const a = data.data[(y * canvas.width + x) * 4 + 3];
+      if (a <= 0) continue;
+      minX = Math.min(minX, x);
+      minY = Math.min(minY, y);
+      maxX = Math.max(maxX, x);
+      maxY = Math.max(maxY, y);
+    }
+  }
+
+  if (maxX < minX || maxY < minY) return canvas;
+
+  const out = createCanvas(maxX - minX + 1, maxY - minY + 1);
+  const octx = out.getContext('2d');
+  if (!octx) return canvas;
+  octx.drawImage(canvas, minX, minY, out.width, out.height, 0, 0, out.width, out.height);
+  return out;
+}
+
+function recolorLogo(canvas: HTMLCanvasElement, cfg: GraphicConfig): HTMLCanvasElement {
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return canvas;
+  const data = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+  for (let y = 0; y < canvas.height; y += 1) {
+    for (let x = 0; x < canvas.width; x += 1) {
+      const i = (y * canvas.width + x) * 4;
+      const a = data.data[i + 3];
+      if (a === 0) continue;
+      const t = clamp01((x + y) / Math.max(1, canvas.width + canvas.height));
+      const c = mixColor3(cfg.recolor_logo_start_rgb, cfg.recolor_logo_end_rgb, t);
+      data.data[i] = c[0];
+      data.data[i + 1] = c[1];
+      data.data[i + 2] = c[2];
+    }
+  }
+
+  ctx.putImageData(data, 0, 0);
+  return canvas;
+}
+
+function removeDarkLogoBackground(canvas: HTMLCanvasElement, cfg: GraphicConfig): HTMLCanvasElement {
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return canvas;
+  const data = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const threshold = clamp8(cfg.logo_dark_bg_threshold);
+
+  for (let y = 0; y < canvas.height; y += 1) {
+    for (let x = 0; x < canvas.width; x += 1) {
+      const i = (y * canvas.width + x) * 4;
+      const maxRgb = Math.max(data.data[i], data.data[i + 1], data.data[i + 2]);
+      if (maxRgb < threshold) {
+        data.data[i + 3] = 0;
+      }
+    }
+  }
+
+  ctx.putImageData(data, 0, 0);
+  return canvas;
+}
+
+function resizeKeepRatio(canvas: HTMLCanvasElement, targetW: number): HTMLCanvasElement {
+  const longest = Math.max(canvas.width, canvas.height);
+  const scale = targetW / Math.max(1, longest);
+  const nextW = Math.max(1, Math.round(canvas.width * scale));
+  const nextH = Math.max(1, Math.round(canvas.height * scale));
+  const out = createCanvas(nextW, nextH);
+  const ctx = out.getContext('2d');
+  if (!ctx) return canvas;
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(canvas, 0, 0, nextW, nextH);
+  return out;
+}
+
+function buildMedallion(
+  logo: HTMLCanvasElement,
+  canvasWidth: number,
+  cfg: GraphicConfig,
+  darkVariant: boolean,
+): HTMLCanvasElement {
+  const pad = Math.max(0, Math.round(canvasWidth * cfg.medallion_padding_ratio));
+  const bw = logo.width + 2 * pad;
+  const bh = logo.height + 2 * pad;
+  const out = createCanvas(bw, bh);
+  const ctx = out.getContext('2d');
+  if (!ctx) return logo;
+
+  const radius = Math.max(18, Math.round(Math.min(bw, bh) * cfg.medallion_corner_ratio));
+  const fill = darkVariant ? cfg.dark_medallion_fill_rgba : cfg.medallion_fill_rgba;
+  const outline = darkVariant ? cfg.dark_medallion_outline_rgba : cfg.medallion_outline_rgba;
+
+  ctx.fillStyle = color4ToCss(fill);
+  drawRoundedRect(ctx, 0, 0, bw, bh, radius);
+  ctx.fill();
+
+  if (cfg.medallion_outline_width > 0) {
+    ctx.strokeStyle = color4ToCss(outline);
+    ctx.lineWidth = cfg.medallion_outline_width;
+    drawRoundedRect(ctx, 1, 1, bw - 2, bh - 2, radius);
+    ctx.stroke();
+  }
+
+  if (cfg.medallion_highlight_enabled && !darkVariant) {
+    const hh = Math.max(1, Math.round(bh * cfg.medallion_highlight_height_ratio));
+    ctx.fillStyle = color4ToCss(cfg.medallion_highlight_rgba);
+    drawRoundedRect(ctx, 2, 2, bw - 4, hh, radius);
+    ctx.fill();
+  }
+
+  ctx.drawImage(logo, Math.round((bw - logo.width) / 2), Math.round((bh - logo.height) / 2));
+  return out;
+}
+
+async function processLogo(
+  logoUrl: string,
+  targetWidth: number,
+  cfg: GraphicConfig,
+): Promise<HTMLCanvasElement> {
+  const img = await loadImage(logoUrl);
+
+  const original = createCanvas(img.width, img.height);
+  const octx = original.getContext('2d');
+  if (!octx) return original;
+  octx.drawImage(img, 0, 0);
+
+  if (cfg.logo_keep_original) {
+    return resizeKeepRatio(original, targetWidth);
+  }
+
+  let work = original;
+  if (cfg.logo_remove_dark_bg) {
+    work = removeDarkLogoBackground(work, cfg);
+  }
+
+  work = cropAlphaBounds(work);
+
+  if (cfg.recolor_logo) {
+    work = recolorLogo(work, cfg);
+  }
+
+  return resizeKeepRatio(work, targetWidth);
+}
+
+async function addCenterLogo(
+  base: HTMLCanvasElement,
+  cfg: GraphicConfig,
+  logo: LogoAsset,
+  darkMedallion: boolean,
+  quietLogs: boolean,
+): Promise<HTMLCanvasElement> {
+  if (logo.kind === 'none' || !logo.url) return base;
+
+  try {
+    const out = createCanvas(base.width, base.height);
+    const ctx = out.getContext('2d');
+    if (!ctx) return base;
+    ctx.drawImage(base, 0, 0);
+
+    const targetW = Math.max(1, Math.round(base.width * cfg.logo_scale));
+    const logoCanvas = await processLogo(logo.url, targetW, cfg);
+    const centerAsset = cfg.medallion_enabled
+      ? buildMedallion(logoCanvas, base.width, cfg, darkMedallion)
+      : logoCanvas;
+
+    ctx.drawImage(
+      centerAsset,
+      Math.round((base.width - centerAsset.width) / 2),
+      Math.round((base.height - centerAsset.height) / 2),
+    );
+    return out;
+  } catch (err) {
+    if (!quietLogs) {
+      console.warn(err);
+    }
+    return base;
+  }
+}
+
+function drawForDecode(input: HTMLCanvasElement, cfg: GraphicConfig): HTMLCanvasElement {
+  const out = createCanvas(input.width, input.height);
+  const ctx = out.getContext('2d');
+  if (!ctx) return input;
+
+  ctx.fillStyle = color3ToCss([cfg.background_rgba[0], cfg.background_rgba[1], cfg.background_rgba[2]]);
+  ctx.fillRect(0, 0, out.width, out.height);
+  ctx.drawImage(input, 0, 0);
+  return out;
+}
+
+function decodeCanvas(canvas: HTMLCanvasElement, cfg: GraphicConfig): string | null {
+  const source = drawForDecode(canvas, cfg);
+  const ctx = source.getContext('2d');
+  if (!ctx) return null;
+  const data = ctx.getImageData(0, 0, source.width, source.height);
+  const decoded = jsQR(data.data, source.width, source.height);
+  return decoded?.data ?? null;
+}
+
+export async function renderStyledQRCode(req: RenderRequest): Promise<RenderResult> {
+  const info = buildMatrixInfo(req.url, req.boxSize, req.border);
+  const cfg = req.graphic;
+
+  if (!req.quietLogs) {
+    console.info(`[QR] Rendering style=${cfg.style_mode} modules=${info.modules} canvas=${info.width}x${info.height}`);
+  }
+
+  let qrCore: HTMLCanvasElement;
+  if (cfg.style_mode === 'full_dark_artistic') {
+    qrCore = renderFullDarkQR(info, cfg);
+    qrCore = applyGlow(qrCore, cfg);
+    qrCore = await addCenterLogo(qrCore, cfg, req.logo, true, req.quietLogs);
+  } else if (cfg.style_mode === 'white_clean') {
+    qrCore = renderDarkGradientQR(info, cfg);
+    qrCore = await addCenterLogo(qrCore, cfg, req.logo, false, req.quietLogs);
+    if (cfg.shadow_enabled) qrCore = applyShadow(qrCore, cfg);
+    qrCore = composeOnBackground(qrCore, cfg);
+  } else {
+    qrCore = renderDarkGradientQR(info, cfg);
+    qrCore = await addCenterLogo(qrCore, cfg, req.logo, false, req.quietLogs);
+    qrCore = composeBlackBgSafe(qrCore, cfg);
+  }
+
+  const decodedText = req.decodeCheck ? decodeCanvas(qrCore, cfg) : null;
+  return {
+    canvas: qrCore,
+    decodedText,
+    modulesCount: info.modules,
+  };
+}
+
+export function inferFormat(outputFormat: OutputFormat, filename: string): Exclude<OutputFormat, 'auto'> {
+  if (outputFormat !== 'auto') return outputFormat;
+  const ext = filename.toLowerCase().split('.').pop();
+  if (ext === 'webp') return 'webp';
+  if (ext === 'jpg' || ext === 'jpeg') return 'jpeg';
+  if (ext === 'svg') return 'svg';
+  return 'png';
+}
+
+function scaleToMaxWidth(canvas: HTMLCanvasElement, maxWidth?: number): HTMLCanvasElement {
+  if (!maxWidth || maxWidth <= 0 || canvas.width <= maxWidth) return canvas;
+  const ratio = maxWidth / canvas.width;
+  const targetH = Math.max(1, Math.round(canvas.height * ratio));
+  const out = createCanvas(maxWidth, targetH);
+  const ctx = out.getContext('2d');
+  if (!ctx) return canvas;
+  ctx.drawImage(canvas, 0, 0, out.width, out.height);
+  return out;
+}
+
+function generateCleanSvg(url: string, boxSize: number, border: number): string {
+  const info = buildMatrixInfo(url, boxSize, border);
+  const size = info.width;
+  const parts: string[] = [];
+
+  parts.push(`<?xml version=\"1.0\" encoding=\"UTF-8\"?>`);
+  parts.push(`<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"${size}\" height=\"${size}\" viewBox=\"0 0 ${size} ${size}\">`);
+  parts.push(`<rect width=\"100%\" height=\"100%\" fill=\"white\"/>`);
+  parts.push('<g fill="black">');
+
+  for (let my = 0; my < info.modules; my += 1) {
+    for (let mx = 0; mx < info.modules; mx += 1) {
+      if (!info.matrix[my][mx]) continue;
+      const x = info.offset + mx * info.cell;
+      const y = info.offset + my * info.cell;
+      parts.push(`<rect x=\"${x}\" y=\"${y}\" width=\"${info.cell}\" height=\"${info.cell}\"/>`);
+    }
+  }
+
+  parts.push('</g></svg>');
+  return parts.join('');
+}
+
+function triggerDownload(blob: Blob, filename: string): void {
+  const a = document.createElement('a');
+  const url = URL.createObjectURL(blob);
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+export async function exportRenderedQRCode(params: {
+  renderedCanvas: HTMLCanvasElement;
+  url: string;
+  boxSize: number;
+  border: number;
+  outputFormat: OutputFormat;
+  filename: string;
+  quality: number;
+  maxWidth?: number;
+}): Promise<{ actualFormat: string; filename: string }> {
+  const actualFormat = inferFormat(params.outputFormat, params.filename);
+  const baseName = params.filename.replace(/\.[^/.]+$/, '');
+
+  if (actualFormat === 'svg') {
+    const svg = generateCleanSvg(params.url, params.boxSize, params.border);
+    triggerDownload(new Blob([svg], { type: 'image/svg+xml;charset=utf-8' }), `${baseName}.svg`);
+    return { actualFormat: 'svg', filename: `${baseName}.svg` };
+  }
+
+  const canvas = scaleToMaxWidth(params.renderedCanvas, params.maxWidth);
+  const mime =
+    actualFormat === 'jpeg'
+      ? 'image/jpeg'
+      : actualFormat === 'webp'
+        ? 'image/webp'
+        : 'image/png';
+
+  const quality = clamp01(params.quality / 100);
+  const blob = await new Promise<Blob | null>((resolve) => {
+    canvas.toBlob(resolve, mime, quality);
+  });
+
+  if (!blob) throw new Error('Export blob generation failed');
+
+  const ext = actualFormat === 'jpeg' ? 'jpg' : actualFormat;
+  const filename = `${baseName}.${ext}`;
+  triggerDownload(blob, filename);
+  return { actualFormat, filename };
+}
