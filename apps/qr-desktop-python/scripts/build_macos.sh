@@ -5,8 +5,9 @@ PYTHON_EXE="${PYTHON_EXE:-python3}"
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$PROJECT_ROOT"
 
-ICON_PNG="assets/app_icon.png"
-ICON_ICNS="assets/app_icon.icns"
+SHARED_ASSETS="$PROJECT_ROOT/../../shared/assets"
+ICON_PNG="$SHARED_ASSETS/app_icon.png"
+ICON_ICNS="$SHARED_ASSETS/app_icon.icns"
 
 if [[ -f "$ICON_PNG" ]]; then
   "$PYTHON_EXE" scripts/make_icons.py --source "$ICON_PNG" --icns "$ICON_ICNS"
@@ -20,7 +21,7 @@ ARGS=(
   --name QRStudioPro
   --collect-all customtkinter
   --collect-all tkinterdnd2
-  --add-data "assets:assets"
+  --add-data "$SHARED_ASSETS:assets"
   --osx-bundle-identifier "com.phusis.qrstudiopro"
   qr_gui.py
 )

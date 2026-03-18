@@ -10,21 +10,21 @@ pip install -r requirements.txt
 
 ## 2) Icône de l'application
 
-- Le fichier source est `assets/app_icon.png`.
+- Le fichier source est `../../shared/assets/app_icon.png`.
 - Si besoin, remplace-le par ton logo.
 - Génération des formats d'icône:
 
 ```bash
-python scripts/make_icons.py --source assets/app_icon.png
+python scripts/make_icons.py --source ../../shared/assets/app_icon.png
 ```
 
 Ce script crée:
-- `assets/app_icon.ico` (Windows)
-- `assets/app_icon.icns` (macOS, seulement si `iconutil` est disponible, donc sur Mac)
+- `../../shared/assets/app_icon.ico` (Windows)
+- `../../shared/assets/app_icon.icns` (macOS, seulement si `iconutil` est disponible, donc sur Mac)
 
 Les logos intégrés utilisés par le GUI sont dans:
-- `assets/logos/logo_phusis.png`
-- `assets/logos/logo-romane-pena.webp`
+- `../../shared/assets/logos/logo_phusis.png`
+- `../../shared/assets/logos/logo-romane-pena.webp`
 
 ## 3) Build Windows (.exe)
 
@@ -54,7 +54,9 @@ Sortie:
 - Le binaire est construit pour l'OS courant.  
   Exemple: pour un vrai `.exe`, build sur Windows; pour un vrai `.app`, build sur macOS.
 - Sur macOS, pour distribuer publiquement, il faut ensuite signer/notariser l'app.
-- L'icône de fenêtre est aussi chargée au runtime depuis:
+- L'icône de fenêtre est aussi chargée au runtime depuis le bundle `assets` généré par PyInstaller.
+- En mode source (non packagé), l'app cherche d'abord dans `assets/` local puis fallback sur `../../shared/assets`.
+- Priorité:
   - `assets/app_icon.ico` (prioritaire)
   - sinon `assets/app_icon.png`
   - sinon `assets/logos/logo_phusis.png`

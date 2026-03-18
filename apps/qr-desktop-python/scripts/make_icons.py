@@ -83,10 +83,14 @@ def build_icns(base: Image.Image, out_icns: Path) -> bool:
 
 
 def parse_args() -> argparse.Namespace:
+    default_source = "../../shared/assets/app_icon.png"
+    default_ico = "../../shared/assets/app_icon.ico"
+    default_icns = "../../shared/assets/app_icon.icns"
+
     parser = argparse.ArgumentParser(description="Generate app icon files for packaging.")
-    parser.add_argument("--source", default="assets/app_icon.png", help="Source PNG logo path")
-    parser.add_argument("--ico", default="assets/app_icon.ico", help="Output ICO path")
-    parser.add_argument("--icns", default="assets/app_icon.icns", help="Output ICNS path")
+    parser.add_argument("--source", default=default_source, help="Source PNG logo path")
+    parser.add_argument("--ico", default=default_ico, help="Output ICO path")
+    parser.add_argument("--icns", default=default_icns, help="Output ICNS path")
     parser.add_argument(
         "--padding-ratio",
         type=float,

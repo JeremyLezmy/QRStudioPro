@@ -1,6 +1,8 @@
 env_qrcode/*
 env_qrcode
 generated_qrcode
+apps/qr-desktop-python/generated_qrcode/
+webapp/
 
 **/__pycache__/
 *.py[cod]
@@ -8,7 +10,7 @@ generated_qrcode
 build/
 dist/
 *.spec
-assets/*.iconset/
+shared/assets/*.iconset/
 
 .venv/
 venv/
@@ -20,3 +22,8 @@ Thumbs.db
 .vscode/
 
 .pytest_cache/
+
+# Node / Vite
+node_modules/
+*.tsbuildinfo
+.vite/
