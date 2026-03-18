@@ -22,6 +22,7 @@ import {
   validateOverrides,
   type CustomPresetMap,
 } from './lib/presetsIO';
+import { buildAdaptiveGraphicFromLogo } from './lib/logoAdaptivePreset';
 import { exportRenderedQRCode, renderStyledQRCode, type LogoAsset } from './lib/qrRenderer';
 import type {
   Color3,
@@ -54,6 +55,7 @@ type EditorTab = 'Project' | 'Logo' | 'Output' | 'Graphic';
 const BUILTIN_PRESET_NAMES = listPresetNames();
 const DEFAULT_URL = 'https://phusis.io/';
 const DEFAULT_PRESET_NAME = 'white_clean';
+const AUTO_LOGO_PRESET_NAME = 'auto_logo_dynamic';
 const OUTPUT_FORMATS: OutputFormat[] = ['auto', 'png', 'webp', 'jpeg', 'svg'];
 
 function deepClone<T>(value: T): T {
@@ -169,6 +171,8 @@ export default function App() {
   const [autoPreview, setAutoPreview] = useState(true);
   const [decodeCheck, setDecodeCheck] = useState(true);
   const [quietLogs, setQuietLogs] = useState(false);
+  const [autoAdaptFromLogo, setAutoAdaptFromLogo] = useState(true);
+  const [isAutoAdaptingLogo, setIsAutoAdaptingLogo] = useState(false);
 
   const [outputFormat, setOutputFormat] = useState<OutputFormat>('auto');
   const [outputFilename, setOutputFilename] = useState('qr_output.png');
@@ -235,7 +239,9 @@ export default function App() {
 
   useEffect(() => {
     if (!allPresetNames.includes(presetName)) {
-      const fallback = allPresetNames[0] ?? DEFAULT_PRESET_NAME;
+      const fallback = allPresetNames.includes(DEFAULT_PRESET_NAME)
+        ? DEFAULT_PRESET_NAME
+        : allPresetNames[0] ?? DEFAULT_PRESET_NAME;
       setPresetName(fallback);
       setGraphic(resolvePresetGraphicConfig(fallback, customPresets));
     }
@@ -380,6 +386,35 @@ export default function App() {
     [customPresets],
   );
 
+  const onApplyLogoAdaptivePreset = useCallback(
+    async (logoUrl: string, sourceLabel?: string) => {
+      const target = logoUrl.trim();
+      if (!target) {
+        setStatus({ text: "Aucun logo disponible pour l'adaptation automatique.", tone: 'error' });
+        return;
+      }
+
+      setIsAutoAdaptingLogo(true);
+      try {
+        const adaptedGraphic = await buildAdaptiveGraphicFromLogo(target, graphic);
+        const overrides = graphicToOverrides(adaptedGraphic);
+        setGraphic(adaptedGraphic);
+        setCustomPresets((prev) => ({ ...prev, [AUTO_LOGO_PRESET_NAME]: overrides }));
+        setPresetName(AUTO_LOGO_PRESET_NAME);
+        setStatus({
+          text: `Preset adapté automatiquement depuis ${sourceLabel ?? 'le logo'}.`,
+          tone: 'success',
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        setStatus({ text: `Adaptation auto impossible: ${message}`, tone: 'error' });
+      } finally {
+        setIsAutoAdaptingLogo(false);
+      }
+    },
+    [graphic],
+  );
+
   const onLogoChoiceChanged = useCallback(
     (choice: LogoLibraryChoice) => {
       setLogoChoice(choice);
@@ -398,8 +433,15 @@ export default function App() {
           tone: 'info',
         });
       }
+
+      if (autoAdaptFromLogo && choice !== 'Custom' && choice !== 'No logo') {
+        const path = BUILTIN_LOGOS[choice as Exclude<LogoLibraryChoice, 'Custom'>];
+        if (path) {
+          void onApplyLogoAdaptivePreset(resolveAssetUrl(path), choice);
+        }
+      }
     },
-    [allPresetNames, onPresetSelected],
+    [allPresetNames, autoAdaptFromLogo, onApplyLogoAdaptivePreset, onPresetSelected],
   );
 
   const onOutputFormatChanged = useCallback((format: OutputFormat) => {
@@ -421,11 +463,14 @@ export default function App() {
       setCustomLogoName(file.name);
       setCustomLogoUrl('');
       setStatus({ text: `Logo chargé: ${file.name}`, tone: 'success' });
+      if (autoAdaptFromLogo) {
+        await onApplyLogoAdaptivePreset(dataUrl, file.name);
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setStatus({ text: `Erreur logo: ${message}`, tone: 'error' });
     }
-  }, []);
+  }, [autoAdaptFromLogo, onApplyLogoAdaptivePreset]);
 
   const onSaveCustomPreset = useCallback(() => {
     const suggested = normalizePresetName(presetName || 'custom_preset');
@@ -475,7 +520,9 @@ export default function App() {
       return next;
     });
 
-    const fallback = BUILTIN_PRESET_NAMES[0] ?? DEFAULT_PRESET_NAME;
+    const fallback = BUILTIN_PRESET_NAMES.includes(DEFAULT_PRESET_NAME)
+      ? DEFAULT_PRESET_NAME
+      : BUILTIN_PRESET_NAMES[0] ?? DEFAULT_PRESET_NAME;
     onPresetSelected(fallback);
     setStatus({ text: `Preset supprimé: ${presetName}`, tone: 'info' });
   }, [customPresets, onPresetSelected, presetName]);
@@ -529,6 +576,8 @@ export default function App() {
     setAutoPreview(true);
     setDecodeCheck(true);
     setQuietLogs(false);
+    setAutoAdaptFromLogo(true);
+    setIsAutoAdaptingLogo(false);
 
     setOutputFormat('auto');
     setOutputFilename('qr_output.png');
@@ -611,6 +660,18 @@ export default function App() {
     runRender,
     url,
   ]);
+
+  const currentLogoAsset = resolveLogoAsset();
+  const hasLogoForAdaptation = currentLogoAsset.kind === 'url' && Boolean(currentLogoAsset.url);
+
+  const onApplyAdaptationFromCurrentLogo = useCallback(() => {
+    if (currentLogoAsset.kind !== 'url' || !currentLogoAsset.url) {
+      setStatus({ text: "Aucun logo actif pour l'adaptation.", tone: 'error' });
+      return;
+    }
+    const label = logoChoice === 'Custom' ? customLogoName || 'logo personnalisé' : logoChoice;
+    void onApplyLogoAdaptivePreset(currentLogoAsset.url, label);
+  }, [currentLogoAsset, customLogoName, logoChoice, onApplyLogoAdaptivePreset]);
 
   const isFullDarkMode = graphic.style_mode === 'full_dark_artistic';
   const qualityDisabled = outputFormat === 'png' || outputFormat === 'svg';
@@ -987,6 +1048,27 @@ export default function App() {
                     placeholder="https://.../logo.png"
                   />
                 </label>
+
+                <div className="field field-buttons">
+                  <span>Adaptation design</span>
+                  <div className="row-buttons">
+                    <label className="switch compact">
+                      <input
+                        type="checkbox"
+                        checked={autoAdaptFromLogo}
+                        onChange={(event) => setAutoAdaptFromLogo(event.target.checked)}
+                      />
+                      <span>Auto adapter au logo</span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={onApplyAdaptationFromCurrentLogo}
+                      disabled={!hasLogoForAdaptation || isAutoAdaptingLogo}
+                    >
+                      {isAutoAdaptingLogo ? 'Analyse logo...' : 'Adapter le preset au logo'}
+                    </button>
+                  </div>
+                </div>
 
                 <div
                   className={`drop-zone ${dragActive ? 'active' : ''}`}

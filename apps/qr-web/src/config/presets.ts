@@ -156,6 +156,7 @@ const BUILTIN_PRESET_LABELS: Record<string, string> = {
   white_clean: 'Blanc épuré',
   luxury: 'Luxe',
   pena_psychologue: 'Pena Psychologue',
+  auto_logo_dynamic: 'Adapté au logo',
 };
 
 function toTitleCase(value: string): string {

@@ -547,14 +547,18 @@ input[type='range']::-moz-range-thumb {
 @media (min-width: 1081px) {
   .right-column .sticky {
     top: 14px;
-    max-height: calc(100vh - 28px);
   }
 }
 
 .preview-card {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 12px;
-  align-content: start;
+  align-items: stretch;
+}
+
+.preview-card > * {
+  min-width: 0;
 }
 
 .preview-header {
@@ -593,6 +597,7 @@ input[type='range']::-moz-range-thumb {
   padding: 10px;
   min-height: 0;
   aspect-ratio: 1 / 1;
+  flex-shrink: 0;
 }
 
 .preview-stage img {
@@ -623,6 +628,7 @@ input[type='range']::-moz-range-thumb {
   gap: 8px;
   min-height: 34px;
   align-content: flex-start;
+  flex-shrink: 0;
 }
 
 .preview-meta span {
@@ -658,6 +664,7 @@ input[type='range']::-moz-range-thumb {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .status.info {
