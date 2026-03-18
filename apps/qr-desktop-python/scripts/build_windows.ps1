@@ -6,8 +6,9 @@ $ErrorActionPreference = "Stop"
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
 Set-Location $ProjectRoot
 
-$iconPng = "assets/app_icon.png"
-$iconIco = "assets/app_icon.ico"
+$sharedAssets = (Resolve-Path (Join-Path $ProjectRoot "..\..\shared\assets")).Path
+$iconPng = Join-Path $sharedAssets "app_icon.png"
+$iconIco = Join-Path $sharedAssets "app_icon.ico"
 
 if (Test-Path $iconPng) {
     & $PythonExe scripts/make_icons.py --source $iconPng --ico $iconIco
@@ -22,7 +23,7 @@ $args = @(
     "--name", "QRStudioPro",
     "--collect-all", "customtkinter",
     "--collect-all", "tkinterdnd2",
-    "--add-data", "assets;assets",
+    "--add-data", "$sharedAssets;assets",
     "qr_gui.py"
 )
 

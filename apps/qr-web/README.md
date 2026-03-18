@@ -16,7 +16,7 @@ Webapp SPA (React + Vite + TypeScript) pour générer des QR codes stylisés ave
 ## Start
 
 ```bash
-cd webapp
+cd apps/qr-web
 npm install
 npm run dev
 ```
@@ -24,7 +24,7 @@ npm run dev
 ## Build
 
 ```bash
-cd webapp
+cd apps/qr-web
 npm run build
 npm run preview
 ```

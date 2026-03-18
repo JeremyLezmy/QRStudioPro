@@ -127,13 +127,14 @@ class QrStudioApp:
         return ""
 
     def _discover_builtin_logos(self) -> Dict[str, Optional[Path]]:
-        root = self._project_root()
+        roots = self._asset_lookup_roots()
 
         def _pick(*relative_paths: str) -> Optional[Path]:
-            for rel in relative_paths:
-                p = root / rel
-                if p.exists():
-                    return p
+            for base in roots:
+                for rel in relative_paths:
+                    p = base / rel
+                    if p.exists():
+                        return p
             return None
 
         logos: Dict[str, Optional[Path]] = {"No logo": None}
@@ -182,15 +183,34 @@ class QrStudioApp:
                 return Path(base)
         return Path(__file__).resolve().parents[1]
 
-    def _set_application_icon(self) -> None:
+    def _asset_lookup_roots(self) -> list[Path]:
         root = self._project_root()
-        ico_path = root / "assets" / "app_icon.ico"
-        png_candidates = [
-            root / "assets" / "app_icon.png",
-            root / "assets" / "logos" / "logo_phusis.png",
-        ]
+        roots = [root]
+        if not getattr(sys, "frozen", False):
+            repo_root = root.parents[1] if len(root.parents) >= 2 else root
+            roots.append(repo_root / "shared")
+        return roots
 
-        if ico_path.exists():
+    def _set_application_icon(self) -> None:
+        roots = self._asset_lookup_roots()
+
+        ico_path: Optional[Path] = None
+        for base in roots:
+            candidate = base / "assets" / "app_icon.ico"
+            if candidate.exists():
+                ico_path = candidate
+                break
+
+        png_candidates: list[Path] = []
+        for base in roots:
+            png_candidates.extend(
+                [
+                    base / "assets" / "app_icon.png",
+                    base / "assets" / "logos" / "logo_phusis.png",
+                ]
+            )
+
+        if ico_path is not None and ico_path.exists():
             try:
                 self.root.iconbitmap(default=str(ico_path))
                 return
