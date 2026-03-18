@@ -1208,9 +1208,16 @@ export default function App() {
                   <input
                     value={outputMaxWidth}
                     onChange={(event) => setOutputMaxWidth(event.target.value)}
-                    placeholder="empty = full size"
+                    placeholder="vide = taille native"
                     disabled={maxWidthDisabled}
                   />
+                  <small className="field-note">
+                    {outputMaxWidth.trim()
+                      ? `Export limité à ${outputMaxWidth.trim()} px de large (ratio conservé).`
+                      : previewMeta
+                        ? `Vide = taille native exportée: ${previewMeta.width} x ${previewMeta.height} px.`
+                        : 'Vide = taille native exportée (identique à la preview courante).'}
+                  </small>
                 </label>
 
                 <label className="field">
