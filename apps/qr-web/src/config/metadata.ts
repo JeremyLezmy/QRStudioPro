@@ -3,7 +3,6 @@ import type { FieldGroup, FieldSpec } from '../types/qr';
 export const GROUP_ORDER: FieldGroup[] = ['General', 'Modules', 'Full Dark', 'Logo', 'Medallion', 'FX'];
 
 export const FIELD_SPECS: FieldSpec[] = [
-  { key: 'style_mode', label: 'Style Mode', description: "Mode principal du rendu QR.", group: 'General', type: 'style_mode' },
   { key: 'transparent_output', label: 'Transparent', description: 'Rend le fond transparent quand possible.', group: 'General', type: 'boolean' },
   { key: 'background_rgba', label: 'Background', description: 'Couleur de fond globale.', group: 'General', type: 'color4' },
   { key: 'plate_color_rgba', label: 'Plate Color', description: 'Couleur de plaque en mode black_bg_safe.', group: 'General', type: 'color4' },

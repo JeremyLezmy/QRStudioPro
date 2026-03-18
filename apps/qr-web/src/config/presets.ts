@@ -148,6 +148,28 @@ export const PRESET_OVERRIDES: Record<string, Partial<GraphicConfig>> = {
   },
 };
 
+const HIDDEN_PRESET_NAMES = new Set<string>(['black_bg_safe']);
+
+const BUILTIN_PRESET_LABELS: Record<string, string> = {
+  black_bg_safe: 'Noir sécurisé',
+  full_dark_artistic: 'Dark artistique',
+  white_clean: 'Blanc épuré',
+  luxury: 'Luxe',
+  pena_psychologue: 'Pena Psychologue',
+};
+
+function toTitleCase(value: string): string {
+  return value
+    .replace(/[_-]+/g, ' ')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+export function getPresetDisplayName(name: string): string {
+  return BUILTIN_PRESET_LABELS[name] ?? toTitleCase(name);
+}
+
 function deepClone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
@@ -198,7 +220,9 @@ export function getPresetGraphicConfig(presetName?: string | null): GraphicConfi
 }
 
 export function listPresetNames(): string[] {
-  return Object.keys(PRESET_OVERRIDES).sort();
+  return Object.keys(PRESET_OVERRIDES)
+    .filter((name) => !HIDDEN_PRESET_NAMES.has(name))
+    .sort();
 }
 
 export const BUILTIN_LOGOS: Record<Exclude<LogoLibraryChoice, 'Custom'>, string | null> = {

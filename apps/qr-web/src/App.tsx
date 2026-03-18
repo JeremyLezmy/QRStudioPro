@@ -5,8 +5,8 @@ import {
   FINDER_SHAPE_VALUES,
   LOGO_RECOMMENDED_PRESET,
   MODULE_SHAPE_VALUES,
-  STYLE_MODE_VALUES,
   applyGraphicOverrides,
+  getPresetDisplayName,
   getPresetGraphicConfig,
   listPresetNames,
 } from './config/presets';
@@ -53,6 +53,7 @@ type EditorTab = 'Project' | 'Logo' | 'Output' | 'Graphic';
 
 const BUILTIN_PRESET_NAMES = listPresetNames();
 const DEFAULT_URL = 'https://phusis.io/';
+const DEFAULT_PRESET_NAME = 'white_clean';
 const OUTPUT_FORMATS: OutputFormat[] = ['auto', 'png', 'webp', 'jpeg', 'svg'];
 
 function deepClone<T>(value: T): T {
@@ -91,7 +92,7 @@ function resolvePresetGraphicConfig(name: string, customPresets: CustomPresetMap
 
   const custom = customPresets[name];
   if (!custom) {
-    return getPresetGraphicConfig('black_bg_safe');
+    return getPresetGraphicConfig(DEFAULT_PRESET_NAME);
   }
 
   return applyGraphicOverrides(DEFAULT_GRAPHIC_CONFIG, custom);
@@ -149,7 +150,7 @@ export default function App() {
     LOGO_RECOMMENDED_PRESET[initialLogoChoice] &&
     BUILTIN_PRESET_NAMES.includes(LOGO_RECOMMENDED_PRESET[initialLogoChoice] as string)
       ? (LOGO_RECOMMENDED_PRESET[initialLogoChoice] as string)
-      : 'black_bg_safe';
+      : DEFAULT_PRESET_NAME;
 
   const [customPresets, setCustomPresets] = useState<CustomPresetMap>(() => loadCustomPresets());
 
@@ -234,7 +235,7 @@ export default function App() {
 
   useEffect(() => {
     if (!allPresetNames.includes(presetName)) {
-      const fallback = allPresetNames[0] ?? 'black_bg_safe';
+      const fallback = allPresetNames[0] ?? DEFAULT_PRESET_NAME;
       setPresetName(fallback);
       setGraphic(resolvePresetGraphicConfig(fallback, customPresets));
     }
@@ -370,7 +371,7 @@ export default function App() {
       setPresetName(name);
       try {
         setGraphic(resolvePresetGraphicConfig(name, customPresets));
-        setStatus({ text: `Preset loaded: ${name}`, tone: 'info' });
+        setStatus({ text: `Preset loaded: ${getPresetDisplayName(name)}`, tone: 'info' });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         setStatus({ text: `Impossible de charger le preset: ${message}`, tone: 'error' });
@@ -392,7 +393,10 @@ export default function App() {
       const recommended = LOGO_RECOMMENDED_PRESET[choice];
       if (recommended && allPresetNames.includes(recommended)) {
         onPresetSelected(recommended);
-        setStatus({ text: `Logo ${choice}: preset recommandé ${recommended} appliqué.`, tone: 'info' });
+        setStatus({
+          text: `Logo ${choice}: preset recommandé ${getPresetDisplayName(recommended)} appliqué.`,
+          tone: 'info',
+        });
       }
     },
     [allPresetNames, onPresetSelected],
@@ -442,7 +446,7 @@ export default function App() {
 
     setCustomPresets((prev) => ({ ...prev, [unique]: overrides }));
     setPresetName(unique);
-    setStatus({ text: `Preset sauvegardé: ${unique}`, tone: 'success' });
+    setStatus({ text: `Preset sauvegardé: ${getPresetDisplayName(unique)}`, tone: 'success' });
   }, [allPresetNames, graphic, presetName]);
 
   const onExportPresetJson = useCallback(() => {
@@ -471,9 +475,7 @@ export default function App() {
       return next;
     });
 
-    const fallback = BUILTIN_PRESET_NAMES.includes('black_bg_safe')
-      ? 'black_bg_safe'
-      : BUILTIN_PRESET_NAMES[0] ?? 'black_bg_safe';
+    const fallback = BUILTIN_PRESET_NAMES[0] ?? DEFAULT_PRESET_NAME;
     onPresetSelected(fallback);
     setStatus({ text: `Preset supprimé: ${presetName}`, tone: 'info' });
   }, [customPresets, onPresetSelected, presetName]);
@@ -494,7 +496,7 @@ export default function App() {
         setCustomPresets((prev) => ({ ...prev, [uniqueName]: deepClone(parsed.overrides) }));
         setPresetName(uniqueName);
         setGraphic(validatedConfig);
-        setStatus({ text: `Preset importé: ${uniqueName}`, tone: 'success' });
+        setStatus({ text: `Preset importé: ${getPresetDisplayName(uniqueName)}`, tone: 'success' });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         setStatus({ text: `Import preset impossible: ${message}`, tone: 'error' });
@@ -510,7 +512,7 @@ export default function App() {
   }, [runRender]);
 
   const onResetAll = useCallback(() => {
-    const resetPreset = BUILTIN_PRESET_NAMES.includes(initialPreset) ? initialPreset : 'black_bg_safe';
+    const resetPreset = BUILTIN_PRESET_NAMES.includes(initialPreset) ? initialPreset : DEFAULT_PRESET_NAME;
 
     setUrl(DEFAULT_URL);
     setPresetName(resetPreset);
@@ -755,21 +757,6 @@ export default function App() {
     const key = spec.key;
     const value = graphic[key];
 
-    if (spec.type === 'style_mode') {
-      return (
-        <select
-          value={graphic.style_mode}
-          onChange={(event) => setGraphicField('style_mode', event.target.value as GraphicConfig['style_mode'])}
-        >
-          {STYLE_MODE_VALUES.map((mode) => (
-            <option key={mode} value={mode}>
-              {mode}
-            </option>
-          ))}
-        </select>
-      );
-    }
-
     if (spec.type === 'module_shape') {
       return (
         <select
@@ -919,17 +906,17 @@ export default function App() {
                 </label>
 
                 <label className="field">
-                  <span>Preset</span>
+                  <span>Preset visuel</span>
                   <select value={presetName} onChange={(event) => onPresetSelected(event.target.value)}>
                     {BUILTIN_PRESET_NAMES.map((name) => (
                       <option key={name} value={name}>
-                        {name}
+                        {getPresetDisplayName(name)}
                       </option>
                     ))}
                     {customPresetNames.length > 0 ? <option disabled>──────────</option> : null}
                     {customPresetNames.map((name) => (
                       <option key={name} value={name}>
-                        {name} (custom)
+                        {getPresetDisplayName(name)} (Custom)
                       </option>
                     ))}
                   </select>

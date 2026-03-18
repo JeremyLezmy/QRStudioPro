@@ -41,6 +41,17 @@ function createCanvas(width: number, height: number): HTMLCanvasElement {
   return canvas;
 }
 
+function getReadbackContext(canvas: HTMLCanvasElement): CanvasRenderingContext2D | null {
+  // Hint the browser that this 2D context is read frequently via getImageData.
+  // This reduces expensive GPU readback paths on some engines.
+  return (
+    canvas.getContext(
+      '2d',
+      { willReadFrequently: true } as unknown as CanvasRenderingContext2DSettings,
+    ) ?? canvas.getContext('2d')
+  );
+}
+
 function buildMatrixInfo(url: string, boxSize: number, border: number): QRMatrixInfo {
   const qr = qrcode(0, 'H');
   qr.addData(url);
@@ -429,7 +440,7 @@ function loadImage(url: string): Promise<HTMLImageElement> {
 }
 
 function cropAlphaBounds(canvas: HTMLCanvasElement): HTMLCanvasElement {
-  const ctx = canvas.getContext('2d');
+  const ctx = getReadbackContext(canvas);
   if (!ctx) return canvas;
   const data = ctx.getImageData(0, 0, canvas.width, canvas.height);
 
@@ -459,7 +470,7 @@ function cropAlphaBounds(canvas: HTMLCanvasElement): HTMLCanvasElement {
 }
 
 function recolorLogo(canvas: HTMLCanvasElement, cfg: GraphicConfig): HTMLCanvasElement {
-  const ctx = canvas.getContext('2d');
+  const ctx = getReadbackContext(canvas);
   if (!ctx) return canvas;
   const data = ctx.getImageData(0, 0, canvas.width, canvas.height);
 
@@ -481,7 +492,7 @@ function recolorLogo(canvas: HTMLCanvasElement, cfg: GraphicConfig): HTMLCanvasE
 }
 
 function removeDarkLogoBackground(canvas: HTMLCanvasElement, cfg: GraphicConfig): HTMLCanvasElement {
-  const ctx = canvas.getContext('2d');
+  const ctx = getReadbackContext(canvas);
   if (!ctx) return canvas;
   const data = ctx.getImageData(0, 0, canvas.width, canvas.height);
   const threshold = clamp8(cfg.logo_dark_bg_threshold);
@@ -631,7 +642,7 @@ function drawForDecode(input: HTMLCanvasElement, cfg: GraphicConfig): HTMLCanvas
 
 function decodeCanvas(canvas: HTMLCanvasElement, cfg: GraphicConfig): string | null {
   const source = drawForDecode(canvas, cfg);
-  const ctx = source.getContext('2d');
+  const ctx = getReadbackContext(source);
   if (!ctx) return null;
   const data = ctx.getImageData(0, 0, source.width, source.height);
   const decoded = jsQR(data.data, source.width, source.height);
