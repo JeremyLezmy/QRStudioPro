@@ -83,7 +83,7 @@ export interface RenderOptions {
   quietLogs: boolean;
 }
 
-export type FieldGroup = 'General' | 'Modules' | 'Full Dark' | 'Logo' | 'Medallion' | 'FX';
+export type FieldGroup = 'General' | 'Modules' | 'Logo' | 'Medallion' | 'FX';
 export type FieldType =
   | 'style_mode'
   | 'module_shape'

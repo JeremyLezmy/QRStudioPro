@@ -88,6 +88,10 @@ export const PRESET_OVERRIDES: Record<string, Partial<GraphicConfig>> = {
   full_dark_artistic: {
     style_mode: 'full_dark_artistic',
     background_rgba: [8, 10, 14, 255],
+    gradient_start_rgb: [214, 240, 236],
+    gradient_end_rgb: [90, 180, 200],
+    finder_outer_rgb: [232, 248, 245],
+    finder_center_rgb: [170, 220, 228],
     outer_plate_enabled: false,
     shadow_enabled: false,
     glow_enabled: true,
@@ -199,6 +203,20 @@ export function applyGraphicOverrides(
   delete normalizedOverrides.finder_top_left_enabled;
   delete normalizedOverrides.finder_top_right_enabled;
   delete normalizedOverrides.finder_bottom_left_enabled;
+
+  // Legacy full-dark color fields are now centralized in Modules.
+  if (!('gradient_start_rgb' in normalizedOverrides) && 'light_module_start_rgb' in normalizedOverrides) {
+    normalizedOverrides.gradient_start_rgb = normalizedOverrides.light_module_start_rgb;
+  }
+  if (!('gradient_end_rgb' in normalizedOverrides) && 'light_module_end_rgb' in normalizedOverrides) {
+    normalizedOverrides.gradient_end_rgb = normalizedOverrides.light_module_end_rgb;
+  }
+  if (!('finder_outer_rgb' in normalizedOverrides) && 'full_dark_finder_outer_rgb' in normalizedOverrides) {
+    normalizedOverrides.finder_outer_rgb = normalizedOverrides.full_dark_finder_outer_rgb;
+  }
+  if (!('finder_center_rgb' in normalizedOverrides) && 'full_dark_finder_center_rgb' in normalizedOverrides) {
+    normalizedOverrides.finder_center_rgb = normalizedOverrides.full_dark_finder_center_rgb;
+  }
 
   const next = deepClone(base);
   for (const [key, value] of Object.entries(normalizedOverrides)) {

@@ -1,6 +1,6 @@
 import type { FieldGroup, FieldSpec } from '../types/qr';
 
-export const GROUP_ORDER: FieldGroup[] = ['General', 'Modules', 'Full Dark', 'Logo', 'Medallion', 'FX'];
+export const GROUP_ORDER: FieldGroup[] = ['General', 'Modules', 'Logo', 'Medallion', 'FX'];
 
 export const FIELD_SPECS: FieldSpec[] = [
   { key: 'transparent_output', label: 'Transparent', description: 'Rend le fond transparent quand possible.', group: 'General', type: 'boolean' },
@@ -9,23 +9,18 @@ export const FIELD_SPECS: FieldSpec[] = [
   { key: 'outer_plate_enabled', label: 'Outer Plate', description: 'Active la plaque externe.', group: 'General', type: 'boolean' },
   { key: 'outer_plate_margin', label: 'Plate Margin', description: 'Marge interne de la plaque.', group: 'General', type: 'int', min: 0, max: 300, step: 1 },
 
-  { key: 'gradient_start_rgb', label: 'Gradient Start', description: 'Couleur de départ du gradient modules.', group: 'Modules', type: 'color3' },
-  { key: 'gradient_end_rgb', label: 'Gradient End', description: 'Couleur de fin du gradient modules.', group: 'Modules', type: 'color3' },
+  { key: 'gradient_start_rgb', label: 'Gradient Start', description: 'Couleur de départ du gradient modules (inclut full dark).', group: 'Modules', type: 'color3' },
+  { key: 'gradient_end_rgb', label: 'Gradient End', description: 'Couleur de fin du gradient modules (inclut full dark).', group: 'Modules', type: 'color3' },
   { key: 'gradient_mix_base_rgb', label: 'Mix Base', description: "Couleur de base du mix (None possible).", group: 'Modules', type: 'optional_color3' },
   { key: 'gradient_mix_ratio', label: 'Mix Ratio', description: 'Ratio de mix gradient/base.', group: 'Modules', type: 'float', min: 0, max: 1, step: 0.01 },
   { key: 'module_shape', label: 'Module Shape', description: 'Forme des modules internes.', group: 'Modules', type: 'module_shape' },
   { key: 'module_scale', label: 'Module Scale', description: 'Taille relative des modules.', group: 'Modules', type: 'float', min: 0.2, max: 1.25, step: 0.01 },
   { key: 'module_corner_ratio', label: 'Corner Ratio', description: 'Arrondi des modules rounded.', group: 'Modules', type: 'float', min: 0, max: 1, step: 0.01 },
-  { key: 'finder_outer_rgb', label: 'Finder Outer', description: 'Couleur externe des finder patterns.', group: 'Modules', type: 'color3' },
-  { key: 'finder_center_rgb', label: 'Finder Center', description: 'Couleur centre des finder patterns.', group: 'Modules', type: 'color3' },
+  { key: 'finder_outer_rgb', label: 'Finder Outer', description: 'Couleur externe des finder patterns (inclut full dark).', group: 'Modules', type: 'color3' },
+  { key: 'finder_center_rgb', label: 'Finder Center', description: 'Couleur centre des finder patterns (inclut full dark).', group: 'Modules', type: 'color3' },
   { key: 'finder_shape', label: 'Finder Shape', description: 'Forme commune (couronne + coeur) des 3 repères.', group: 'Modules', type: 'finder_shape' },
   { key: 'finder_scale', label: 'Finder Scale', description: 'Taille globale des repères de coin.', group: 'Modules', type: 'float', min: 0.65, max: 1.5, step: 0.01 },
   { key: 'finder_corner_ratio', label: 'Finder Corner Ratio', description: 'Arrondi si forme rounded.', group: 'Modules', type: 'float', min: 0, max: 1, step: 0.01 },
-
-  { key: 'light_module_start_rgb', label: 'Light Start', description: 'Gradient start full dark.', group: 'Full Dark', type: 'color3' },
-  { key: 'light_module_end_rgb', label: 'Light End', description: 'Gradient end full dark.', group: 'Full Dark', type: 'color3' },
-  { key: 'full_dark_finder_outer_rgb', label: 'FD Finder Outer', description: 'Finder outer en full dark.', group: 'Full Dark', type: 'color3' },
-  { key: 'full_dark_finder_center_rgb', label: 'FD Finder Center', description: 'Finder center en full dark.', group: 'Full Dark', type: 'color3' },
 
   { key: 'logo_scale', label: 'Logo Scale', description: 'Taille relative du logo.', group: 'Logo', type: 'float', min: 0.05, max: 0.4, step: 0.001 },
   { key: 'logo_keep_original', label: 'Keep Original', description: 'Conserve le logo sans traitement destructif.', group: 'Logo', type: 'boolean' },

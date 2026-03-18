@@ -249,7 +249,6 @@ export default function App() {
     const map: Record<FieldGroup, FieldSpec[]> = {
       General: [],
       Modules: [],
-      'Full Dark': [],
       Logo: [],
       Medallion: [],
       FX: [],
@@ -709,13 +708,11 @@ export default function App() {
     void onApplyLogoAdaptivePreset(currentLogoAsset.url, label);
   }, [currentLogoAsset, customLogoName, logoChoice, onApplyLogoAdaptivePreset]);
 
-  const isFullDarkMode = graphic.style_mode === 'full_dark_artistic';
   const qualityDisabled = outputFormat === 'png' || outputFormat === 'svg';
   const maxWidthDisabled = outputFormat === 'svg';
   const selectedPresetIsCustom = Boolean(customPresets[presetName]);
   const editorTabs: EditorTab[] = ['Project', 'Logo', 'Output', 'Graphic'];
   const activeGroupSpecs = groupedSpecs[activeGraphicGroup] ?? [];
-  const activeGroupDisabled = activeGraphicGroup === 'Full Dark' && !isFullDarkMode;
 
   const renderNumericField = (spec: FieldSpec) => {
     const key = spec.key;
@@ -1268,17 +1265,12 @@ export default function App() {
               </div>
 
               <div className="groups-stack">
-                <section className={`group-card ${activeGroupDisabled ? 'disabled' : ''}`}>
+                <section className="group-card">
                   <div className="group-head">
                     <h3>{activeGraphicGroup}</h3>
-                    {activeGraphicGroup === 'Full Dark' ? (
-                      <span className={`group-pill ${activeGroupDisabled ? 'warn' : 'ok'}`}>
-                        {activeGroupDisabled ? 'Active only in full_dark_artistic' : 'Active'}
-                      </span>
-                    ) : null}
                   </div>
 
-                  <fieldset disabled={activeGroupDisabled}>
+                  <fieldset>
                     {activeGroupSpecs.map((spec) => (
                       <div className="param-row" key={String(spec.key)}>
                         <label title={spec.description}>

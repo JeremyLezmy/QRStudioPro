@@ -419,12 +419,12 @@ function renderFullDarkQR(info: QRMatrixInfo, cfg: GraphicConfig): HTMLCanvasEle
     ctx,
     info,
     cfg,
-    cfg.light_module_start_rgb,
-    cfg.light_module_end_rgb,
+    cfg.gradient_start_rgb,
+    cfg.gradient_end_rgb,
     null,
     0,
   );
-  drawFinderPatterns(ctx, info, cfg, cfg.full_dark_finder_outer_rgb, cfg.full_dark_finder_center_rgb);
+  drawFinderPatterns(ctx, info, cfg, cfg.finder_outer_rgb, cfg.finder_center_rgb);
   return out;
 }
 
