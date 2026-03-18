@@ -22,10 +22,6 @@ export const FIELD_SPECS: FieldSpec[] = [
   { key: 'finder_shape', label: 'Finder Shape', description: 'Forme commune (couronne + coeur) des 3 repères.', group: 'Modules', type: 'finder_shape' },
   { key: 'finder_scale', label: 'Finder Scale', description: 'Taille globale des repères de coin.', group: 'Modules', type: 'float', min: 0.65, max: 1.5, step: 0.01 },
   { key: 'finder_corner_ratio', label: 'Finder Corner Ratio', description: 'Arrondi si forme rounded.', group: 'Modules', type: 'float', min: 0, max: 1, step: 0.01 },
-  { key: 'finder_offset', label: 'Finder Offset', description: 'Décalage X,Y (pixels) des 3 repères.', group: 'Modules', type: 'offset2' },
-  { key: 'finder_top_left_enabled', label: 'Finder Top Left', description: 'Affiche le repère en haut à gauche.', group: 'Modules', type: 'boolean' },
-  { key: 'finder_top_right_enabled', label: 'Finder Top Right', description: 'Affiche le repère en haut à droite.', group: 'Modules', type: 'boolean' },
-  { key: 'finder_bottom_left_enabled', label: 'Finder Bottom Left', description: 'Affiche le repère en bas à gauche.', group: 'Modules', type: 'boolean' },
 
   { key: 'light_module_start_rgb', label: 'Light Start', description: 'Gradient start full dark.', group: 'Full Dark', type: 'color3' },
   { key: 'light_module_end_rgb', label: 'Light End', description: 'Gradient end full dark.', group: 'Full Dark', type: 'color3' },

@@ -31,6 +31,10 @@ body,
   min-height: 100%;
 }
 
+html {
+  scrollbar-gutter: stable;
+}
+
 body {
   overflow-x: hidden;
   font-family: 'Source Sans 3', sans-serif;
@@ -131,6 +135,10 @@ button {
   min-width: 0;
   display: grid;
   gap: 14px;
+}
+
+.right-column {
+  align-self: stretch;
 }
 
 .topbar,
@@ -512,9 +520,17 @@ input[type='range']::-moz-range-thumb {
   top: 20px;
 }
 
+@media (min-width: 1081px) {
+  .right-column .sticky {
+    top: 14px;
+    max-height: calc(100vh - 28px);
+  }
+}
+
 .preview-card {
   display: grid;
   gap: 12px;
+  align-content: start;
 }
 
 .preview-header {
@@ -551,6 +567,8 @@ input[type='range']::-moz-range-thumb {
   align-items: center;
   overflow: hidden;
   padding: 10px;
+  min-height: 0;
+  aspect-ratio: 1 / 1;
 }
 
 .preview-stage img {
@@ -579,6 +597,8 @@ input[type='range']::-moz-range-thumb {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  min-height: 34px;
+  align-content: flex-start;
 }
 
 .preview-meta span {
@@ -587,6 +607,10 @@ input[type='range']::-moz-range-thumb {
   background: rgba(219, 234, 229, 0.78);
   color: #264743;
   font-size: 0.8rem;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .preview-meta span.decode-ok {
@@ -604,6 +628,12 @@ input[type='range']::-moz-range-thumb {
   padding: 9px 10px;
   font-size: 0.9rem;
   border: 1px solid transparent;
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .status.info {
@@ -697,6 +727,7 @@ input[type='range']::-moz-range-thumb {
 
 .preview-stage.mobile {
   min-height: min(62vh, 540px);
+  aspect-ratio: auto;
 }
 
 @media (max-width: 1400px) {

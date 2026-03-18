@@ -34,8 +34,6 @@ interface QRMatrixInfo {
   offset: number;
 }
 
-type FinderCorner = 'top_left' | 'top_right' | 'bottom_left';
-
 function createCanvas(width: number, height: number): HTMLCanvasElement {
   const canvas = document.createElement('canvas');
   canvas.width = Math.max(1, Math.round(width));
@@ -190,21 +188,11 @@ function drawFinderRing(
   ctx.fill('evenodd');
 }
 
-function getFinderCorner(mx: number, my: number, modules: number): FinderCorner | null {
-  if (mx >= 0 && mx < 7 && my >= 0 && my < 7) return 'top_left';
-  if (mx >= modules - 7 && mx < modules && my >= 0 && my < 7) return 'top_right';
-  if (mx >= 0 && mx < 7 && my >= modules - 7 && my < modules) return 'bottom_left';
-  return null;
-}
-
-function isFinderEnabled(cfg: GraphicConfig, corner: FinderCorner): boolean {
-  if (corner === 'top_left') return cfg.finder_top_left_enabled;
-  if (corner === 'top_right') return cfg.finder_top_right_enabled;
-  return cfg.finder_bottom_left_enabled;
-}
-
-function shouldSkipFinderModules(cfg: GraphicConfig): boolean {
-  return cfg.finder_offset[0] === 0 && cfg.finder_offset[1] === 0;
+function isFinderModule(mx: number, my: number, modules: number): boolean {
+  const topLeft = mx >= 0 && mx < 7 && my >= 0 && my < 7;
+  const topRight = mx >= modules - 7 && mx < modules && my >= 0 && my < 7;
+  const bottomLeft = mx >= 0 && mx < 7 && my >= modules - 7 && my < modules;
+  return topLeft || topRight || bottomLeft;
 }
 
 function drawFinderPatterns(
@@ -218,28 +206,24 @@ function drawFinderPatterns(
   const size = 7 * info.cell * scale;
   const centerSize = (3 * size) / 7;
   const ringThickness = size / 7;
-  const drawOffsetX = cfg.finder_offset[0];
-  const drawOffsetY = cfg.finder_offset[1];
 
-  const finderPositions: Array<{ corner: FinderCorner; x: number; y: number }> = [
-    { corner: 'top_left', x: info.offset, y: info.offset },
-    { corner: 'top_right', x: info.width - info.offset - 7 * info.cell, y: info.offset },
-    { corner: 'bottom_left', x: info.offset, y: info.height - info.offset - 7 * info.cell },
+  const finderPositions: Array<{ x: number; y: number }> = [
+    { x: info.offset, y: info.offset },
+    { x: info.width - info.offset - 7 * info.cell, y: info.offset },
+    { x: info.offset, y: info.height - info.offset - 7 * info.cell },
   ];
 
   ctx.fillStyle = color3ToCss(outerColor);
   for (const finder of finderPositions) {
-    if (!isFinderEnabled(cfg, finder.corner)) continue;
-    const baseX = finder.x + (7 * info.cell - size) / 2 + drawOffsetX;
-    const baseY = finder.y + (7 * info.cell - size) / 2 + drawOffsetY;
+    const baseX = finder.x + (7 * info.cell - size) / 2;
+    const baseY = finder.y + (7 * info.cell - size) / 2;
     drawFinderRing(ctx, cfg.finder_shape, baseX, baseY, size, cfg.finder_corner_ratio);
   }
 
   ctx.fillStyle = color3ToCss(centerColor);
   for (const finder of finderPositions) {
-    if (!isFinderEnabled(cfg, finder.corner)) continue;
-    const baseX = finder.x + (7 * info.cell - size) / 2 + drawOffsetX;
-    const baseY = finder.y + (7 * info.cell - size) / 2 + drawOffsetY;
+    const baseX = finder.x + (7 * info.cell - size) / 2;
+    const baseY = finder.y + (7 * info.cell - size) / 2;
     const centerX = baseX + 2 * ringThickness;
     const centerY = baseY + 2 * ringThickness;
     drawModuleShape(
@@ -269,14 +253,7 @@ function drawDataModules(
   for (let my = 0; my < info.modules; my += 1) {
     for (let mx = 0; mx < info.modules; mx += 1) {
       if (!info.matrix[my][mx]) continue;
-      const finderCorner = getFinderCorner(mx, my, info.modules);
-      if (
-        finderCorner &&
-        isFinderEnabled(cfg, finderCorner) &&
-        shouldSkipFinderModules(cfg)
-      ) {
-        continue;
-      }
+      if (isFinderModule(mx, my, info.modules)) continue;
 
       const x0 = info.offset + mx * info.cell + pad;
       const y0 = info.offset + my * info.cell + pad;

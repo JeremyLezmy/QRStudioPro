@@ -25,10 +25,6 @@ export interface GraphicConfig {
   finder_shape: FinderShape;
   finder_scale: number;
   finder_corner_ratio: number;
-  finder_offset: [number, number];
-  finder_top_left_enabled: boolean;
-  finder_top_right_enabled: boolean;
-  finder_bottom_left_enabled: boolean;
 
   light_module_start_rgb: Color3;
   light_module_end_rgb: Color3;

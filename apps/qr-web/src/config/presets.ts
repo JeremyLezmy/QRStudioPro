@@ -29,10 +29,6 @@ export const DEFAULT_GRAPHIC_CONFIG: GraphicConfig = {
   finder_shape: 'square',
   finder_scale: 1.0,
   finder_corner_ratio: 0.32,
-  finder_offset: [0, 0],
-  finder_top_left_enabled: true,
-  finder_top_right_enabled: true,
-  finder_bottom_left_enabled: true,
 
   light_module_start_rgb: [214, 240, 236],
   light_module_end_rgb: [90, 180, 200],
@@ -175,6 +171,11 @@ export function applyGraphicOverrides(
   }
   delete normalizedOverrides.finder_outer_shape;
   delete normalizedOverrides.finder_center_shape;
+  // Removed in UI V3: fixed finder placement + mandatory 3 finders.
+  delete normalizedOverrides.finder_offset;
+  delete normalizedOverrides.finder_top_left_enabled;
+  delete normalizedOverrides.finder_top_right_enabled;
+  delete normalizedOverrides.finder_bottom_left_enabled;
 
   const next = deepClone(base);
   for (const [key, value] of Object.entries(normalizedOverrides)) {
