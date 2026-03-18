@@ -57,6 +57,11 @@ const DEFAULT_URL = 'https://phusis.io/';
 const DEFAULT_PRESET_NAME = 'white_clean';
 const AUTO_LOGO_PRESET_NAME = 'auto_logo_dynamic';
 const OUTPUT_FORMATS: OutputFormat[] = ['auto', 'png', 'webp', 'jpeg', 'svg'];
+const PRESET_RECOMMENDED_LOGO: Partial<Record<string, Exclude<LogoLibraryChoice, 'Custom'>>> = {
+  full_dark_artistic: 'Phusis',
+  luxury: 'Phusis',
+  pena_psychologue: 'Romane Pena',
+};
 
 function deepClone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
@@ -144,6 +149,37 @@ function channelClamp(raw: number): number {
 
 function qualityClamp(raw: number): number {
   return Math.round(clamp(raw, 1, 100));
+}
+
+function normalizeUrlForCompare(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+
+  try {
+    const parsed = new URL(trimmed);
+    const protocol = parsed.protocol.toLowerCase();
+    const host = parsed.hostname.toLowerCase();
+    const isDefaultPort =
+      (protocol === 'http:' && parsed.port === '80') ||
+      (protocol === 'https:' && parsed.port === '443');
+    const port = parsed.port && !isDefaultPort ? `:${parsed.port}` : '';
+    const path = parsed.pathname === '/' ? '' : parsed.pathname;
+    return `${protocol}//${host}${port}${path}${parsed.search}${parsed.hash}`;
+  } catch {
+    return trimmed;
+  }
+}
+
+function isDecodedMatch(expected: string, decoded: string | null): boolean {
+  if (!decoded) return false;
+  const left = normalizeUrlForCompare(expected);
+  const right = normalizeUrlForCompare(decoded);
+  return left !== null && right !== null && left === right;
+}
+
+function decodeBadgeClass(expected: string, decoded: string | null): 'decode-ok' | 'decode-fail' | 'decode-unknown' {
+  if (decoded === null) return 'decode-unknown';
+  return isDecodedMatch(expected, decoded) ? 'decode-ok' : 'decode-fail';
 }
 
 export default function App() {
@@ -315,10 +351,17 @@ export default function App() {
           renderMs: performance.now() - started,
         });
 
+        const decodeMatches = isDecodedMatch(trimmedUrl, result.decodedText);
+
         if (!decodeCheck) {
           setStatus({ text: 'Preview updated.', tone: 'success' });
-        } else if (result.decodedText === trimmedUrl) {
+        } else if (decodeMatches) {
           setStatus({ text: 'Preview updated. Decode check: OK', tone: 'success' });
+        } else if (result.decodedText === null) {
+          setStatus({
+            text: 'Preview updated. Decode check: inconclusif (le scan mobile peut rester valide).',
+            tone: 'info',
+          });
         } else {
           setStatus({ text: 'Preview updated. Decode check: mismatch.', tone: 'error' });
         }
@@ -377,13 +420,27 @@ export default function App() {
       setPresetName(name);
       try {
         setGraphic(resolvePresetGraphicConfig(name, customPresets));
+
+        const recommendedLogo = PRESET_RECOMMENDED_LOGO[name];
+        if (recommendedLogo && recommendedLogo !== logoChoice) {
+          setLogoChoice(recommendedLogo);
+          setCustomLogoUrl('');
+          setCustomLogoDataUrl(null);
+          setCustomLogoName('');
+          setStatus({
+            text: `Preset loaded: ${getPresetDisplayName(name)}. Logo appliqué: ${recommendedLogo}.`,
+            tone: 'info',
+          });
+          return;
+        }
+
         setStatus({ text: `Preset loaded: ${getPresetDisplayName(name)}`, tone: 'info' });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         setStatus({ text: `Impossible de charger le preset: ${message}`, tone: 'error' });
       }
     },
-    [customPresets],
+    [customPresets, logoChoice],
   );
 
   const onApplyLogoAdaptivePreset = useCallback(
@@ -1287,7 +1344,7 @@ export default function App() {
                   <span>Modules: {previewMeta.modules}</span>
                   <span>Render: {previewMeta.renderMs.toFixed(1)} ms</span>
                   {decodeCheck ? (
-                    <span className={previewMeta.decodedText === url.trim() ? 'decode-ok' : 'decode-fail'}>
+                    <span className={decodeBadgeClass(url, previewMeta.decodedText)}>
                       Decode: {previewMeta.decodedText === null ? 'none' : previewMeta.decodedText}
                     </span>
                   ) : null}
@@ -1348,7 +1405,7 @@ export default function App() {
                 <span>Modules: {previewMeta.modules}</span>
                 <span>Render: {previewMeta.renderMs.toFixed(1)} ms</span>
                 {decodeCheck ? (
-                  <span className={previewMeta.decodedText === url.trim() ? 'decode-ok' : 'decode-fail'}>
+                  <span className={decodeBadgeClass(url, previewMeta.decodedText)}>
                     Decode: {previewMeta.decodedText === null ? 'none' : previewMeta.decodedText}
                   </span>
                 ) : null}

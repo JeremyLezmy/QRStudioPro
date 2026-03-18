@@ -139,7 +139,8 @@ button {
 }
 
 .right-column {
-  align-self: stretch;
+  align-self: start;
+  align-content: start;
 }
 
 .topbar,
@@ -542,6 +543,8 @@ input[type='range']::-moz-range-thumb {
 .right-column .sticky {
   position: sticky;
   top: 20px;
+  align-self: start;
+  height: fit-content;
 }
 
 @media (min-width: 1081px) {
@@ -651,6 +654,11 @@ input[type='range']::-moz-range-thumb {
 .preview-meta span.decode-fail {
   background: rgba(246, 212, 203, 0.92);
   color: #7a2d2d;
+}
+
+.preview-meta span.decode-unknown {
+  background: rgba(236, 226, 196, 0.92);
+  color: #6e5724;
 }
 
 .status {

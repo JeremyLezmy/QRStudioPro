@@ -140,7 +140,7 @@ export const PRESET_OVERRIDES: Record<string, Partial<GraphicConfig>> = {
     recolor_logo_end_rgb: [175, 139, 114],
     medallion_fill_rgba: [252, 248, 243, 255],
     medallion_outline_rgba: [220, 202, 187, 255],
-    shadow_enabled: true,
+    shadow_enabled: false,
     shadow_color_rgba: [35, 35, 35, 55],
     shadow_blur_radius: 10,
     shadow_offset: [8, 10],

@@ -433,7 +433,15 @@ function loadImage(url: string): Promise<HTMLImageElement> {
     const img = new Image();
     // Allow CORS-enabled remote logos and keep built-in assets/data URLs working.
     img.crossOrigin = 'anonymous';
-    img.onload = () => resolve(img);
+    img.onload = () => {
+      const width = img.naturalWidth || img.width;
+      const height = img.naturalHeight || img.height;
+      if (width <= 0 || height <= 0) {
+        reject(new Error(`Logo chargé mais dimensions invalides: ${url}`));
+        return;
+      }
+      resolve(img);
+    };
     img.onerror = () => reject(new Error(`Impossible de charger le logo: ${url}`));
     img.src = url;
   });
@@ -640,13 +648,226 @@ function drawForDecode(input: HTMLCanvasElement, cfg: GraphicConfig): HTMLCanvas
   return out;
 }
 
-function decodeCanvas(canvas: HTMLCanvasElement, cfg: GraphicConfig): string | null {
+function scaleCanvasForDecode(
+  source: HTMLCanvasElement,
+  scale: number,
+  smoothing: boolean,
+): HTMLCanvasElement {
+  const width = Math.max(1, Math.round(source.width * scale));
+  const height = Math.max(1, Math.round(source.height * scale));
+  const out = createCanvas(width, height);
+  const ctx = out.getContext('2d');
+  if (!ctx) return source;
+  ctx.imageSmoothingEnabled = smoothing;
+  ctx.imageSmoothingQuality = smoothing ? 'high' : 'low';
+  ctx.drawImage(source, 0, 0, width, height);
+  return out;
+}
+
+function thresholdCanvasForDecode(source: HTMLCanvasElement, threshold: number): HTMLCanvasElement {
+  const out = createCanvas(source.width, source.height);
+  const ctx = getReadbackContext(out);
+  const sourceCtx = getReadbackContext(source);
+  if (!ctx || !sourceCtx) return source;
+
+  const src = sourceCtx.getImageData(0, 0, source.width, source.height);
+  const dst = ctx.createImageData(source.width, source.height);
+  for (let i = 0; i < src.data.length; i += 4) {
+    const lum = Math.round(0.299 * src.data[i] + 0.587 * src.data[i + 1] + 0.114 * src.data[i + 2]);
+    const value = lum >= threshold ? 255 : 0;
+    dst.data[i] = value;
+    dst.data[i + 1] = value;
+    dst.data[i + 2] = value;
+    dst.data[i + 3] = 255;
+  }
+
+  ctx.putImageData(dst, 0, 0);
+  return out;
+}
+
+function grayscaleCanvasForDecode(source: HTMLCanvasElement, normalize: boolean): HTMLCanvasElement {
+  const out = createCanvas(source.width, source.height);
+  const ctx = getReadbackContext(out);
+  const sourceCtx = getReadbackContext(source);
+  if (!ctx || !sourceCtx) return source;
+
+  const src = sourceCtx.getImageData(0, 0, source.width, source.height);
+  const dst = ctx.createImageData(source.width, source.height);
+
+  let minLum = 255;
+  let maxLum = 0;
+  if (normalize) {
+    for (let i = 0; i < src.data.length; i += 4) {
+      const lum = Math.round(0.299 * src.data[i] + 0.587 * src.data[i + 1] + 0.114 * src.data[i + 2]);
+      if (lum < minLum) minLum = lum;
+      if (lum > maxLum) maxLum = lum;
+    }
+  }
+  const range = Math.max(1, maxLum - minLum);
+
+  for (let i = 0; i < src.data.length; i += 4) {
+    let lum = Math.round(0.299 * src.data[i] + 0.587 * src.data[i + 1] + 0.114 * src.data[i + 2]);
+    if (normalize) {
+      lum = Math.round(((lum - minLum) * 255) / range);
+    }
+    dst.data[i] = lum;
+    dst.data[i + 1] = lum;
+    dst.data[i + 2] = lum;
+    dst.data[i + 3] = 255;
+  }
+
+  ctx.putImageData(dst, 0, 0);
+  return out;
+}
+
+function decodeWithJsQr(source: HTMLCanvasElement): string | null {
+  try {
+    const ctx = getReadbackContext(source);
+    if (!ctx) return null;
+    const data = ctx.getImageData(0, 0, source.width, source.height);
+
+    const decode = jsQR as unknown as (
+      input: Uint8ClampedArray,
+      width: number,
+      height: number,
+      options?: { inversionAttempts?: 'dontInvert' | 'onlyInvert' | 'attemptBoth' | 'invertFirst' },
+    ) => { data?: string } | null;
+
+    const direct = decode(data.data, source.width, source.height, { inversionAttempts: 'attemptBoth' });
+    if (direct?.data) return direct.data;
+
+    const invertOnly = decode(data.data, source.width, source.height, { inversionAttempts: 'onlyInvert' });
+    return invertOnly?.data ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function normalizeForCompare(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed) return '';
+
+  try {
+    const parsed = new URL(trimmed);
+    const protocol = parsed.protocol.toLowerCase();
+    const host = parsed.hostname.toLowerCase();
+    const isDefaultPort =
+      (protocol === 'http:' && parsed.port === '80') ||
+      (protocol === 'https:' && parsed.port === '443');
+    const port = parsed.port && !isDefaultPort ? `:${parsed.port}` : '';
+    const path = parsed.pathname === '/' ? '' : parsed.pathname;
+    return `${protocol}//${host}${port}${path}${parsed.search}${parsed.hash}`;
+  } catch {
+    return trimmed;
+  }
+}
+
+function isDecodedEquivalent(expectedRaw: string, decoded: string | null): boolean {
+  if (!decoded) return false;
+  const expected = normalizeForCompare(expectedRaw);
+  const actual = normalizeForCompare(decoded);
+  return expected !== '' && actual !== '' && expected === actual;
+}
+
+async function decodeWithBarcodeDetector(source: HTMLCanvasElement): Promise<string | null> {
+  type BarcodeDetectorResult = { rawValue?: string };
+  type BarcodeDetectorInstance = { detect: (input: CanvasImageSource) => Promise<BarcodeDetectorResult[]> };
+  type BarcodeDetectorStatic = {
+    new (options?: { formats?: string[] }): BarcodeDetectorInstance;
+    getSupportedFormats?: () => Promise<string[]>;
+  };
+
+  const detectorCtor = (globalThis as { BarcodeDetector?: BarcodeDetectorStatic }).BarcodeDetector;
+  if (!detectorCtor) return null;
+
+  try {
+    const getSupportedFormats = detectorCtor.getSupportedFormats?.bind(detectorCtor);
+    if (getSupportedFormats) {
+      const supported = await getSupportedFormats();
+      if (!supported.includes('qr_code')) return null;
+    }
+
+    const detector = new detectorCtor({ formats: ['qr_code'] });
+    const results = await detector.detect(source);
+    return results[0]?.rawValue ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function decodeCanvas(
+  canvas: HTMLCanvasElement,
+  cfg: GraphicConfig,
+  expectedRaw?: string,
+): Promise<string | null> {
   const source = drawForDecode(canvas, cfg);
-  const ctx = getReadbackContext(source);
-  if (!ctx) return null;
-  const data = ctx.getImageData(0, 0, source.width, source.height);
-  const decoded = jsQR(data.data, source.width, source.height);
-  return decoded?.data ?? null;
+  const candidates: HTMLCanvasElement[] = [source];
+  const expected = expectedRaw?.trim() ?? '';
+  let firstDecoded: string | null = null;
+  const mismatchVotes = new Map<string, { count: number; sample: string }>();
+
+  if (Math.max(source.width, source.height) < 1200) {
+    candidates.push(scaleCanvasForDecode(source, 1.5, false));
+    candidates.push(scaleCanvasForDecode(source, 2, false));
+  }
+
+  const normalizedGray = grayscaleCanvasForDecode(source, true);
+  const plainGray = grayscaleCanvasForDecode(source, false);
+
+  candidates.push(normalizedGray);
+  candidates.push(plainGray);
+  candidates.push(thresholdCanvasForDecode(source, 128));
+  candidates.push(thresholdCanvasForDecode(source, 160));
+  candidates.push(thresholdCanvasForDecode(normalizedGray, 112));
+  candidates.push(thresholdCanvasForDecode(normalizedGray, 144));
+
+  for (const candidate of candidates) {
+    const decoded = decodeWithJsQr(candidate);
+    if (!decoded) continue;
+    if (firstDecoded === null) firstDecoded = decoded;
+    if (!expected || isDecodedEquivalent(expected, decoded)) {
+      return decoded;
+    }
+    const key = normalizeForCompare(decoded);
+    const vote = mismatchVotes.get(key);
+    if (!vote) {
+      mismatchVotes.set(key, { count: 1, sample: decoded });
+    } else {
+      vote.count += 1;
+    }
+  }
+
+  for (const candidate of candidates) {
+    const decoded = await decodeWithBarcodeDetector(candidate);
+    if (!decoded) continue;
+    if (firstDecoded === null) firstDecoded = decoded;
+    if (!expected || isDecodedEquivalent(expected, decoded)) {
+      return decoded;
+    }
+    const key = normalizeForCompare(decoded);
+    const vote = mismatchVotes.get(key);
+    if (!vote) {
+      mismatchVotes.set(key, { count: 1, sample: decoded });
+    } else {
+      vote.count += 1;
+    }
+  }
+
+  if (expected) {
+    let best: { count: number; sample: string } | null = null;
+    for (const vote of mismatchVotes.values()) {
+      if (!best || vote.count > best.count) {
+        best = vote;
+      }
+    }
+    // Only report mismatch when at least two decode paths agree on the same wrong payload.
+    if (best && best.count >= 2) {
+      return best.sample;
+    }
+    return null;
+  }
+
+  return firstDecoded;
 }
 
 export async function renderStyledQRCode(req: RenderRequest): Promise<RenderResult> {
@@ -658,25 +879,62 @@ export async function renderStyledQRCode(req: RenderRequest): Promise<RenderResu
   }
 
   let qrCore: HTMLCanvasElement;
+  let decodePrimary: HTMLCanvasElement | null = null;
+  let decodeFallback: HTMLCanvasElement | null = null;
+
   if (cfg.style_mode === 'full_dark_artistic') {
     qrCore = renderFullDarkQR(info, cfg);
     if (cfg.glow_enabled) qrCore = applyGlow(qrCore, cfg);
+    decodeFallback = qrCore;
     qrCore = await addCenterLogo(qrCore, cfg, req.logo, true, req.quietLogs);
+    decodePrimary = qrCore;
     if (cfg.shadow_enabled) qrCore = applyShadow(qrCore, cfg);
   } else if (cfg.style_mode === 'white_clean') {
     qrCore = renderDarkGradientQR(info, cfg);
     if (cfg.glow_enabled) qrCore = applyGlow(qrCore, cfg);
+    decodeFallback = qrCore;
     qrCore = await addCenterLogo(qrCore, cfg, req.logo, false, req.quietLogs);
+    decodePrimary = qrCore;
     if (cfg.shadow_enabled) qrCore = applyShadow(qrCore, cfg);
     qrCore = composeOnBackground(qrCore, cfg);
   } else {
     qrCore = renderDarkGradientQR(info, cfg);
     if (cfg.glow_enabled) qrCore = applyGlow(qrCore, cfg);
+    decodeFallback = qrCore;
     qrCore = await addCenterLogo(qrCore, cfg, req.logo, false, req.quietLogs);
+    decodePrimary = qrCore;
     qrCore = composeBlackBgSafe(qrCore, cfg);
   }
 
-  const decodedText = req.decodeCheck ? decodeCanvas(qrCore, cfg) : null;
+  let decodedText: string | null = null;
+  if (req.decodeCheck) {
+    try {
+      const candidates: HTMLCanvasElement[] = [];
+      if (decodePrimary) candidates.push(decodePrimary);
+      if (decodeFallback && decodeFallback !== decodePrimary) candidates.push(decodeFallback);
+      if (cfg.style_mode !== 'black_bg_safe') {
+        candidates.push(qrCore);
+      }
+      const expected = req.url.trim();
+
+      for (const candidate of candidates) {
+        const candidateDecoded = await decodeCanvas(candidate, cfg, expected);
+        if (!candidateDecoded) continue;
+        if (isDecodedEquivalent(expected, candidateDecoded)) {
+          decodedText = candidateDecoded;
+          break;
+        }
+        // decodeCanvas only returns mismatches when they are confirmed by multiple passes.
+        decodedText = candidateDecoded;
+      }
+    } catch (err) {
+      decodedText = null;
+      if (!req.quietLogs) {
+        console.warn('[QR] Decode check failed but render succeeded:', err);
+      }
+    }
+  }
+
   return {
     canvas: qrCore,
     decodedText,

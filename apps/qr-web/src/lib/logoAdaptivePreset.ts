@@ -64,7 +64,15 @@ function loadImage(url: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.crossOrigin = 'anonymous';
-    img.onload = () => resolve(img);
+    img.onload = () => {
+      const width = img.naturalWidth || img.width;
+      const height = img.naturalHeight || img.height;
+      if (width <= 0 || height <= 0) {
+        reject(new Error(`Logo chargé mais dimensions invalides pour analyse: ${url}`));
+        return;
+      }
+      resolve(img);
+    };
     img.onerror = () => reject(new Error(`Impossible de charger le logo pour analyse: ${url}`));
     img.src = url;
   });
