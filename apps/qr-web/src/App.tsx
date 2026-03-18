@@ -182,6 +182,14 @@ function decodeBadgeClass(expected: string, decoded: string | null): 'decode-ok'
   return isDecodedMatch(expected, decoded) ? 'decode-ok' : 'decode-fail';
 }
 
+function decodeStateLabel(expected: string, decoded: string | null, enabled: boolean): string {
+  if (!enabled) return 'Off';
+  const klass = decodeBadgeClass(expected, decoded);
+  if (klass === 'decode-ok') return 'OK';
+  if (klass === 'decode-fail') return 'Mismatch';
+  return 'Inconclusif';
+}
+
 export default function App() {
   const initialLogoChoice: LogoLibraryChoice = BUILTIN_LOGOS.Phusis ? 'Phusis' : 'No logo';
   const initialPreset =
@@ -217,7 +225,6 @@ export default function App() {
 
   const [activeEditorTab, setActiveEditorTab] = useState<EditorTab>('Project');
   const [activeGraphicGroup, setActiveGraphicGroup] = useState<FieldGroup>('General');
-  const [mobilePreviewOpen, setMobilePreviewOpen] = useState(false);
 
   const [isRendering, setIsRendering] = useState(false);
   const [previewSrc, setPreviewSrc] = useState<string>('');
@@ -394,26 +401,6 @@ export default function App() {
     }, 240);
     return () => window.clearTimeout(timeoutId);
   }, [autoPreview, runRender]);
-
-  useEffect(() => {
-    if (!mobilePreviewOpen) return;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.body.style.overflow = previousOverflow;
-    };
-  }, [mobilePreviewOpen]);
-
-  useEffect(() => {
-    if (!mobilePreviewOpen) return;
-    const onKeydown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setMobilePreviewOpen(false);
-      }
-    };
-    window.addEventListener('keydown', onKeydown);
-    return () => window.removeEventListener('keydown', onKeydown);
-  }, [mobilePreviewOpen]);
 
   const onPresetSelected = useCallback(
     (name: string) => {
@@ -643,7 +630,6 @@ export default function App() {
 
     setActiveEditorTab('Project');
     setActiveGraphicGroup('General');
-    setMobilePreviewOpen(false);
 
     setPreviewSrc('');
     setPreviewMeta(null);
@@ -654,13 +640,6 @@ export default function App() {
 
     setStatus({ text: 'Paramètres réinitialisés.', tone: 'info' });
   }, [initialLogoChoice, initialPreset]);
-
-  const onOpenMobilePreview = useCallback(() => {
-    setMobilePreviewOpen(true);
-    if (!renderedCanvasRef.current || renderedSignatureRef.current !== renderSignature) {
-      void runRender(false);
-    }
-  }, [renderSignature, runRender]);
 
   const onExportClick = useCallback(async () => {
     const trimmedUrl = url.trim();
@@ -1359,65 +1338,46 @@ export default function App() {
         </aside>
       </main>
 
-      <button
-        type="button"
-        className={`mobile-preview-fab ${mobilePreviewOpen ? 'is-hidden' : ''}`}
-        onClick={onOpenMobilePreview}
-      >
-        Preview
-      </button>
-
-      <div
-        className={`mobile-preview-modal ${mobilePreviewOpen ? 'open' : ''}`}
-        onClick={() => setMobilePreviewOpen(false)}
-      >
-        <div className="mobile-preview-dialog" onClick={(event) => event.stopPropagation()}>
-          <div className="mobile-preview-header">
+      <section className="mobile-inline-preview">
+        <article className="card preview-card mobile-inline-preview-card">
+          <div className="preview-header">
             <h2>Live Preview</h2>
-            <button
-              type="button"
-              className="mobile-preview-close"
-              onClick={() => setMobilePreviewOpen(false)}
-            >
-              Close
-            </button>
           </div>
 
-          <div className={`preview-stage mobile ${previewSrc ? 'has-image' : 'is-empty'}`}>
+          <button type="button" onClick={onPreviewClick} disabled={isRendering} className="preview-line-btn">
+            {isRendering ? 'Rendering...' : 'Preview'}
+          </button>
+          <button
+            type="button"
+            onClick={onExportClick}
+            className="primary preview-line-btn"
+            disabled={isRendering}
+          >
+            Export QR
+          </button>
+
+          <div className={`preview-stage mobile-inline ${previewSrc ? 'has-image' : 'is-empty'}`}>
             {previewSrc ? <img src={previewSrc} alt="QR preview" /> : <div className="placeholder">No preview yet</div>}
           </div>
 
-          <div className="preview-actions mobile">
-            <button type="button" onClick={onPreviewClick} disabled={isRendering}>
-              {isRendering ? 'Rendering...' : 'Preview'}
-            </button>
-            <button type="button" onClick={onExportClick} className="primary" disabled={isRendering}>
-              Export QR
-            </button>
-          </div>
-
-          <div className="preview-meta">
-            {previewMeta ? (
-              <>
-                <span>
-                  Canvas: {previewMeta.width} x {previewMeta.height}
-                </span>
-                <span>Modules: {previewMeta.modules}</span>
-                <span>Render: {previewMeta.renderMs.toFixed(1)} ms</span>
-                {decodeCheck ? (
-                  <span className={decodeBadgeClass(url, previewMeta.decodedText)}>
-                    Decode: {previewMeta.decodedText === null ? 'none' : previewMeta.decodedText}
-                  </span>
-                ) : null}
-              </>
-            ) : (
-              <span>Waiting for first preview render...</span>
-            )}
+          <div className="mobile-decode-row">
+            <span className="mobile-decode-pill">
+              Decode: {previewMeta?.decodedText ?? 'none'}
+            </span>
+            {(!decodeCheck || decodeBadgeClass(url, previewMeta?.decodedText ?? null) !== 'decode-ok') ? (
+              <span
+                className={`mobile-decode-state ${
+                  decodeCheck ? decodeBadgeClass(url, previewMeta?.decodedText ?? null) : 'decode-unknown'
+                }`}
+              >
+                {decodeStateLabel(url, previewMeta?.decodedText ?? null, decodeCheck)}
+              </span>
+            ) : null}
           </div>
 
           <div className={`status ${status.tone}`}>{status.text}</div>
-        </div>
-      </div>
+        </article>
+      </section>
     </div>
   );
 }
