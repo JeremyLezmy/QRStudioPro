@@ -3,6 +3,7 @@ export type Color4 = [number, number, number, number];
 
 export type StyleMode = 'black_bg_safe' | 'full_dark_artistic' | 'white_clean';
 export type ModuleShape = 'square' | 'rounded' | 'dot';
+export type FinderShape = 'square' | 'rounded' | 'dot';
 
 export interface GraphicConfig {
   style_mode: StyleMode;
@@ -21,6 +22,13 @@ export interface GraphicConfig {
 
   finder_outer_rgb: Color3;
   finder_center_rgb: Color3;
+  finder_shape: FinderShape;
+  finder_scale: number;
+  finder_corner_ratio: number;
+  finder_offset: [number, number];
+  finder_top_left_enabled: boolean;
+  finder_top_right_enabled: boolean;
+  finder_bottom_left_enabled: boolean;
 
   light_module_start_rgb: Color3;
   light_module_end_rgb: Color3;
@@ -83,6 +91,7 @@ export type FieldGroup = 'General' | 'Modules' | 'Full Dark' | 'Logo' | 'Medalli
 export type FieldType =
   | 'style_mode'
   | 'module_shape'
+  | 'finder_shape'
   | 'boolean'
   | 'int'
   | 'float'

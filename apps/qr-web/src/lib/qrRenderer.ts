@@ -32,24 +32,15 @@ interface QRMatrixInfo {
   width: number;
   height: number;
   offset: number;
-  finderSet: Set<string>;
 }
 
-const FINDER_REGIONS: [number, number][] = [
-  [0, 0],
-  [1, 0],
-  [0, 1],
-];
+type FinderCorner = 'top_left' | 'top_right' | 'bottom_left';
 
 function createCanvas(width: number, height: number): HTMLCanvasElement {
   const canvas = document.createElement('canvas');
   canvas.width = Math.max(1, Math.round(width));
   canvas.height = Math.max(1, Math.round(height));
   return canvas;
-}
-
-function matrixKey(x: number, y: number): string {
-  return `${x}:${y}`;
 }
 
 function buildMatrixInfo(url: string, boxSize: number, border: number): QRMatrixInfo {
@@ -67,17 +58,6 @@ function buildMatrixInfo(url: string, boxSize: number, border: number): QRMatrix
   const width = (modules + 2 * Math.round(border)) * cell;
   const height = width;
 
-  const finderSet = new Set<string>();
-  for (const [fxIndex, fyIndex] of FINDER_REGIONS) {
-    const fx = fxIndex === 1 ? modules - 7 : 0;
-    const fy = fyIndex === 1 ? modules - 7 : 0;
-    for (let my = fy; my < fy + 7; my += 1) {
-      for (let mx = fx; mx < fx + 7; mx += 1) {
-        finderSet.add(matrixKey(mx, my));
-      }
-    }
-  }
-
   return {
     matrix,
     modules,
@@ -86,7 +66,6 @@ function buildMatrixInfo(url: string, boxSize: number, border: number): QRMatrix
     width,
     height,
     offset,
-    finderSet,
   };
 }
 
@@ -121,12 +100,24 @@ function drawRoundedRect(
 ): void {
   const r = Math.max(0, Math.min(radius, Math.min(w, h) / 2));
   ctx.beginPath();
+  drawRoundedRectPath(ctx, x, y, w, h, r);
+  ctx.closePath();
+}
+
+function drawRoundedRectPath(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  radius: number,
+): void {
+  const r = Math.max(0, Math.min(radius, Math.min(w, h) / 2));
   ctx.moveTo(x + r, y);
   ctx.arcTo(x + w, y, x + w, y + h, r);
   ctx.arcTo(x + w, y + h, x, y + h, r);
   ctx.arcTo(x, y + h, x, y, r);
   ctx.arcTo(x, y, x + w, y, r);
-  ctx.closePath();
 }
 
 function drawModuleShape(
@@ -154,29 +145,111 @@ function drawModuleShape(
   ctx.fillRect(x, y, size, size);
 }
 
+function traceFinderShapePath(
+  ctx: CanvasRenderingContext2D,
+  shape: GraphicConfig['finder_shape'],
+  x: number,
+  y: number,
+  size: number,
+  cornerRatio: number,
+): void {
+  if (shape === 'dot') {
+    ctx.moveTo(x + size, y + size / 2);
+    ctx.ellipse(x + size / 2, y + size / 2, size / 2, size / 2, 0, 0, Math.PI * 2);
+    ctx.closePath();
+    return;
+  }
+
+  if (shape === 'rounded') {
+    const radius = Math.max(1, (size / 2) * clamp01(cornerRatio));
+    drawRoundedRectPath(ctx, x, y, size, size, radius);
+    ctx.closePath();
+    return;
+  }
+
+  ctx.rect(x, y, size, size);
+  ctx.closePath();
+}
+
+function drawFinderRing(
+  ctx: CanvasRenderingContext2D,
+  shape: GraphicConfig['finder_shape'],
+  x: number,
+  y: number,
+  outerSize: number,
+  cornerRatio: number,
+): void {
+  const ringThickness = outerSize / 7;
+  const innerSize = Math.max(1, outerSize - 2 * ringThickness);
+  const innerX = x + ringThickness;
+  const innerY = y + ringThickness;
+
+  ctx.beginPath();
+  traceFinderShapePath(ctx, shape, x, y, outerSize, cornerRatio);
+  traceFinderShapePath(ctx, shape, innerX, innerY, innerSize, cornerRatio);
+  ctx.fill('evenodd');
+}
+
+function getFinderCorner(mx: number, my: number, modules: number): FinderCorner | null {
+  if (mx >= 0 && mx < 7 && my >= 0 && my < 7) return 'top_left';
+  if (mx >= modules - 7 && mx < modules && my >= 0 && my < 7) return 'top_right';
+  if (mx >= 0 && mx < 7 && my >= modules - 7 && my < modules) return 'bottom_left';
+  return null;
+}
+
+function isFinderEnabled(cfg: GraphicConfig, corner: FinderCorner): boolean {
+  if (corner === 'top_left') return cfg.finder_top_left_enabled;
+  if (corner === 'top_right') return cfg.finder_top_right_enabled;
+  return cfg.finder_bottom_left_enabled;
+}
+
+function shouldSkipFinderModules(cfg: GraphicConfig): boolean {
+  return cfg.finder_offset[0] === 0 && cfg.finder_offset[1] === 0;
+}
+
 function drawFinderPatterns(
   ctx: CanvasRenderingContext2D,
   info: QRMatrixInfo,
+  cfg: GraphicConfig,
   outerColor: Color3,
   centerColor: Color3,
 ): void {
-  const finderPositions: [number, number][] = [
-    [info.offset, info.offset],
-    [info.width - info.offset - 7 * info.cell, info.offset],
-    [info.offset, info.height - info.offset - 7 * info.cell],
+  const scale = clamp(cfg.finder_scale, 0.65, 1.5);
+  const size = 7 * info.cell * scale;
+  const centerSize = (3 * size) / 7;
+  const ringThickness = size / 7;
+  const drawOffsetX = cfg.finder_offset[0];
+  const drawOffsetY = cfg.finder_offset[1];
+
+  const finderPositions: Array<{ corner: FinderCorner; x: number; y: number }> = [
+    { corner: 'top_left', x: info.offset, y: info.offset },
+    { corner: 'top_right', x: info.width - info.offset - 7 * info.cell, y: info.offset },
+    { corner: 'bottom_left', x: info.offset, y: info.height - info.offset - 7 * info.cell },
   ];
 
   ctx.fillStyle = color3ToCss(outerColor);
-  for (const [fx, fy] of finderPositions) {
-    ctx.fillRect(fx, fy, info.cell, 7 * info.cell);
-    ctx.fillRect(fx + 6 * info.cell, fy, info.cell, 7 * info.cell);
-    ctx.fillRect(fx, fy, 7 * info.cell, info.cell);
-    ctx.fillRect(fx, fy + 6 * info.cell, 7 * info.cell, info.cell);
+  for (const finder of finderPositions) {
+    if (!isFinderEnabled(cfg, finder.corner)) continue;
+    const baseX = finder.x + (7 * info.cell - size) / 2 + drawOffsetX;
+    const baseY = finder.y + (7 * info.cell - size) / 2 + drawOffsetY;
+    drawFinderRing(ctx, cfg.finder_shape, baseX, baseY, size, cfg.finder_corner_ratio);
   }
 
   ctx.fillStyle = color3ToCss(centerColor);
-  for (const [fx, fy] of finderPositions) {
-    ctx.fillRect(fx + 2 * info.cell, fy + 2 * info.cell, 3 * info.cell, 3 * info.cell);
+  for (const finder of finderPositions) {
+    if (!isFinderEnabled(cfg, finder.corner)) continue;
+    const baseX = finder.x + (7 * info.cell - size) / 2 + drawOffsetX;
+    const baseY = finder.y + (7 * info.cell - size) / 2 + drawOffsetY;
+    const centerX = baseX + 2 * ringThickness;
+    const centerY = baseY + 2 * ringThickness;
+    drawModuleShape(
+      ctx,
+      cfg.finder_shape,
+      centerX,
+      centerY,
+      centerSize,
+      cfg.finder_corner_ratio,
+    );
   }
 }
 
@@ -196,7 +269,14 @@ function drawDataModules(
   for (let my = 0; my < info.modules; my += 1) {
     for (let mx = 0; mx < info.modules; mx += 1) {
       if (!info.matrix[my][mx]) continue;
-      if (info.finderSet.has(matrixKey(mx, my))) continue;
+      const finderCorner = getFinderCorner(mx, my, info.modules);
+      if (
+        finderCorner &&
+        isFinderEnabled(cfg, finderCorner) &&
+        shouldSkipFinderModules(cfg)
+      ) {
+        continue;
+      }
 
       const x0 = info.offset + mx * info.cell + pad;
       const y0 = info.offset + my * info.cell + pad;
@@ -335,7 +415,7 @@ function renderDarkGradientQR(info: QRMatrixInfo, cfg: GraphicConfig): HTMLCanva
     cfg.gradient_mix_base_rgb,
     cfg.gradient_mix_ratio,
   );
-  drawFinderPatterns(ctx, info, cfg.finder_outer_rgb, cfg.finder_center_rgb);
+  drawFinderPatterns(ctx, info, cfg, cfg.finder_outer_rgb, cfg.finder_center_rgb);
   return out;
 }
 
@@ -356,7 +436,7 @@ function renderFullDarkQR(info: QRMatrixInfo, cfg: GraphicConfig): HTMLCanvasEle
     null,
     0,
   );
-  drawFinderPatterns(ctx, info, cfg.full_dark_finder_outer_rgb, cfg.full_dark_finder_center_rgb);
+  drawFinderPatterns(ctx, info, cfg, cfg.full_dark_finder_outer_rgb, cfg.full_dark_finder_center_rgb);
   return out;
 }
 
@@ -592,15 +672,18 @@ export async function renderStyledQRCode(req: RenderRequest): Promise<RenderResu
   let qrCore: HTMLCanvasElement;
   if (cfg.style_mode === 'full_dark_artistic') {
     qrCore = renderFullDarkQR(info, cfg);
-    qrCore = applyGlow(qrCore, cfg);
+    if (cfg.glow_enabled) qrCore = applyGlow(qrCore, cfg);
     qrCore = await addCenterLogo(qrCore, cfg, req.logo, true, req.quietLogs);
+    if (cfg.shadow_enabled) qrCore = applyShadow(qrCore, cfg);
   } else if (cfg.style_mode === 'white_clean') {
     qrCore = renderDarkGradientQR(info, cfg);
+    if (cfg.glow_enabled) qrCore = applyGlow(qrCore, cfg);
     qrCore = await addCenterLogo(qrCore, cfg, req.logo, false, req.quietLogs);
     if (cfg.shadow_enabled) qrCore = applyShadow(qrCore, cfg);
     qrCore = composeOnBackground(qrCore, cfg);
   } else {
     qrCore = renderDarkGradientQR(info, cfg);
+    if (cfg.glow_enabled) qrCore = applyGlow(qrCore, cfg);
     qrCore = await addCenterLogo(qrCore, cfg, req.logo, false, req.quietLogs);
     qrCore = composeBlackBgSafe(qrCore, cfg);
   }

@@ -7,6 +7,7 @@ export const STYLE_MODE_VALUES: GraphicConfig['style_mode'][] = [
 ];
 
 export const MODULE_SHAPE_VALUES: GraphicConfig['module_shape'][] = ['square', 'rounded', 'dot'];
+export const FINDER_SHAPE_VALUES: GraphicConfig['finder_shape'][] = ['square', 'rounded', 'dot'];
 
 export const DEFAULT_GRAPHIC_CONFIG: GraphicConfig = {
   style_mode: 'black_bg_safe',
@@ -25,6 +26,13 @@ export const DEFAULT_GRAPHIC_CONFIG: GraphicConfig = {
 
   finder_outer_rgb: [16, 21, 28],
   finder_center_rgb: [26, 130, 118],
+  finder_shape: 'square',
+  finder_scale: 1.0,
+  finder_corner_ratio: 0.32,
+  finder_offset: [0, 0],
+  finder_top_left_enabled: true,
+  finder_top_right_enabled: true,
+  finder_bottom_left_enabled: true,
 
   light_module_start_rgb: [214, 240, 236],
   light_module_end_rgb: [90, 180, 200],
@@ -152,8 +160,24 @@ export function applyGraphicOverrides(
   base: GraphicConfig,
   overrides: Record<string, unknown>,
 ): GraphicConfig {
+  const normalizedOverrides: Record<string, unknown> = { ...overrides };
+
+  // Backward compatibility for V1/V2 saved presets:
+  // finder_outer_shape + finder_center_shape -> finder_shape
+  if (!('finder_shape' in normalizedOverrides)) {
+    const legacyOuter = normalizedOverrides.finder_outer_shape;
+    const legacyCenter = normalizedOverrides.finder_center_shape;
+    if (typeof legacyOuter === 'string') {
+      normalizedOverrides.finder_shape = legacyOuter;
+    } else if (typeof legacyCenter === 'string') {
+      normalizedOverrides.finder_shape = legacyCenter;
+    }
+  }
+  delete normalizedOverrides.finder_outer_shape;
+  delete normalizedOverrides.finder_center_shape;
+
   const next = deepClone(base);
-  for (const [key, value] of Object.entries(overrides)) {
+  for (const [key, value] of Object.entries(normalizedOverrides)) {
     if (!(key in next)) {
       throw new Error(`Unknown graphic field: ${key}`);
     }

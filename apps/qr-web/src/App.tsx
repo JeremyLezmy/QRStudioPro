@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } f
 import {
   BUILTIN_LOGOS,
   DEFAULT_GRAPHIC_CONFIG,
+  FINDER_SHAPE_VALUES,
   LOGO_RECOMMENDED_PRESET,
   MODULE_SHAPE_VALUES,
   STYLE_MODE_VALUES,
@@ -776,6 +777,19 @@ export default function App() {
           onChange={(event) => setGraphicField('module_shape', event.target.value as GraphicConfig['module_shape'])}
         >
           {MODULE_SHAPE_VALUES.map((shape) => (
+            <option key={shape} value={shape}>
+              {shape}
+            </option>
+          ))}
+        </select>
+      );
+    }
+
+    if (spec.type === 'finder_shape') {
+      const current = value as GraphicConfig['finder_shape'];
+      return (
+        <select value={current} onChange={(event) => setGraphicField(key, event.target.value as GraphicConfig[typeof key])}>
+          {FINDER_SHAPE_VALUES.map((shape) => (
             <option key={shape} value={shape}>
               {shape}
             </option>
