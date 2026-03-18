@@ -1191,7 +1191,7 @@ export default function App() {
               Preview width fixed at 30%
             </div>
 
-            <div className="preview-stage">
+            <div className={`preview-stage ${previewSrc ? 'has-image' : 'is-empty'}`}>
               {previewSrc ? <img src={previewSrc} alt="QR preview" /> : <div className="placeholder">No preview yet</div>}
             </div>
 
@@ -1243,7 +1243,7 @@ export default function App() {
             </button>
           </div>
 
-          <div className="preview-stage mobile">
+          <div className={`preview-stage mobile ${previewSrc ? 'has-image' : 'is-empty'}`}>
             {previewSrc ? <img src={previewSrc} alt="QR preview" /> : <div className="placeholder">No preview yet</div>}
           </div>
 
