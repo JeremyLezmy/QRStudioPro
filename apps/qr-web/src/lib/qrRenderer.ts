@@ -87,9 +87,32 @@ function gradientColorAt(
   end: Color3,
   mixBase: Color3 | null,
   mixRatio: number,
+  strength: number,
+  mode: GraphicConfig['module_gradient_mode'],
+  angleDeg: number,
 ): Color3 {
-  const t = clamp01((x + y) / Math.max(1, width + height));
-  const grad = mixColor3(start, end, t);
+  let t = 0;
+  if (mode === 'radial') {
+    const dx = x - width / 2;
+    const dy = y - height / 2;
+    const maxR = Math.max(1, Math.hypot(width / 2, height / 2));
+    t = clamp01(Math.hypot(dx, dy) / maxR);
+  } else {
+    const rad = (angleDeg * Math.PI) / 180;
+    const ux = Math.cos(rad);
+    const uy = Math.sin(rad);
+    const p = x * ux + y * uy;
+    const p1 = 0 * ux + 0 * uy;
+    const p2 = width * ux + 0 * uy;
+    const p3 = 0 * ux + height * uy;
+    const p4 = width * ux + height * uy;
+    const pMin = Math.min(p1, p2, p3, p4);
+    const pMax = Math.max(p1, p2, p3, p4);
+    t = clamp01((p - pMin) / Math.max(1e-6, pMax - pMin));
+  }
+
+  const boostedT = clamp01(0.5 + (t - 0.5) * Math.max(0, strength));
+  const grad = mixColor3(start, end, boostedT);
   if (!mixBase) return grad;
   const ratio = clamp01(mixRatio);
   return [
@@ -127,6 +150,135 @@ function drawRoundedRectPath(
   ctx.arcTo(x + w, y + h, x, y + h, r);
   ctx.arcTo(x, y + h, x, y, r);
   ctx.arcTo(x, y, x + w, y, r);
+}
+
+type Point2 = { x: number; y: number };
+
+function traceRoundedPolygonPath(
+  ctx: CanvasRenderingContext2D,
+  points: Point2[],
+  radius: number,
+): void {
+  if (points.length < 3) return;
+
+  const n = points.length;
+  const lengths: number[] = [];
+  for (let i = 0; i < n; i += 1) {
+    const p0 = points[i];
+    const p1 = points[(i + 1) % n];
+    lengths.push(Math.hypot(p1.x - p0.x, p1.y - p0.y));
+  }
+
+  const minEdge = lengths.reduce((acc, len) => Math.min(acc, len), Number.POSITIVE_INFINITY);
+  const r = Math.max(0, Math.min(radius, minEdge / 2));
+  if (r <= 0) {
+    ctx.moveTo(points[0].x, points[0].y);
+    for (let i = 1; i < n; i += 1) {
+      ctx.lineTo(points[i].x, points[i].y);
+    }
+    return;
+  }
+
+  for (let i = 0; i < n; i += 1) {
+    const prev = points[(i - 1 + n) % n];
+    const curr = points[i];
+    const next = points[(i + 1) % n];
+
+    const v1x = prev.x - curr.x;
+    const v1y = prev.y - curr.y;
+    const v2x = next.x - curr.x;
+    const v2y = next.y - curr.y;
+
+    const len1 = Math.max(1e-6, Math.hypot(v1x, v1y));
+    const len2 = Math.max(1e-6, Math.hypot(v2x, v2y));
+    const u1x = v1x / len1;
+    const u1y = v1y / len1;
+    const u2x = v2x / len2;
+    const u2y = v2y / len2;
+    const dot = Math.max(-1, Math.min(1, u1x * u2x + u1y * u2y));
+    const angle = Math.acos(dot);
+    const tanHalf = Math.tan(angle / 2);
+    const offset = tanHalf > 1e-6 ? Math.min(r / tanHalf, len1 / 2, len2 / 2) : 0;
+
+    const startX = curr.x + u1x * offset;
+    const startY = curr.y + u1y * offset;
+    const endX = curr.x + u2x * offset;
+    const endY = curr.y + u2y * offset;
+
+    if (i === 0) {
+      ctx.moveTo(startX, startY);
+    } else {
+      ctx.lineTo(startX, startY);
+    }
+    ctx.arcTo(curr.x, curr.y, endX, endY, r);
+  }
+}
+
+function traceMedallionPath(
+  ctx: CanvasRenderingContext2D,
+  shape: GraphicConfig['medallion_shape'],
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  radius: number,
+  ellipseAngleDeg: number,
+  ellipseAspect: number,
+): void {
+  if (shape === 'circle') {
+    const d = Math.min(w, h);
+    ctx.ellipse(x + w / 2, y + h / 2, d / 2, d / 2, 0, 0, Math.PI * 2);
+    return;
+  }
+
+  if (shape === 'ellipse') {
+    const rotation = clamp(ellipseAngleDeg, 0, 90) * (Math.PI / 180);
+    const aspect = Math.max(1e-3, ellipseAspect);
+    const cosA = Math.cos(rotation);
+    const sinA = Math.sin(rotation);
+    const denomW = Math.sqrt((aspect * cosA) ** 2 + sinA ** 2);
+    const denomH = Math.sqrt((aspect * sinA) ** 2 + cosA ** 2);
+    const ryFromW = w / Math.max(2, 2 * denomW);
+    const ryFromH = h / Math.max(2, 2 * denomH);
+    const ry = Math.max(1, Math.min(ryFromW, ryFromH));
+    const rx = Math.max(1, ry * aspect);
+    ctx.ellipse(x + w / 2, y + h / 2, rx, ry, rotation, 0, Math.PI * 2);
+    return;
+  }
+
+  if (shape === 'diamond') {
+    const points: Point2[] = [
+      { x: x + w / 2, y },
+      { x: x + w, y: y + h / 2 },
+      { x: x + w / 2, y: y + h },
+      { x, y: y + h / 2 },
+    ];
+    traceRoundedPolygonPath(ctx, points, radius);
+    return;
+  }
+
+  if (shape === 'square' || shape === 'rectangle') {
+    drawRoundedRectPath(ctx, x, y, w, h, radius);
+    return;
+  }
+
+  ctx.rect(x, y, w, h);
+}
+
+function drawMedallionShape(
+  ctx: CanvasRenderingContext2D,
+  shape: GraphicConfig['medallion_shape'],
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  radius: number,
+  ellipseAngleDeg: number,
+  ellipseAspect: number,
+): void {
+  ctx.beginPath();
+  traceMedallionPath(ctx, shape, x, y, w, h, radius, ellipseAngleDeg, ellipseAspect);
+  ctx.closePath();
 }
 
 function drawModuleShape(
@@ -256,6 +408,9 @@ function drawDataModules(
   gradientEnd: Color3,
   gradientMixBase: Color3 | null,
   gradientMixRatio: number,
+  gradientStrength: number,
+  gradientMode: GraphicConfig['module_gradient_mode'],
+  gradientAngleDeg: number,
 ): void {
   const scale = clamp(cfg.module_scale, 0.2, 1.25);
   const drawSize = info.cell * scale;
@@ -280,6 +435,9 @@ function drawDataModules(
         gradientEnd,
         gradientMixBase,
         gradientMixRatio,
+        gradientStrength,
+        gradientMode,
+        gradientAngleDeg,
       );
 
       ctx.fillStyle = color3ToCss(color);
@@ -312,8 +470,24 @@ function applyGlow(base: HTMLCanvasElement, cfg: GraphicConfig): HTMLCanvasEleme
   gctx.fill();
   gctx.filter = 'none';
 
-  ctx.drawImage(base, 0, 0);
+  if (cfg.glow_mode === 'inner') {
+    // Keep glow only inside QR silhouette.
+    gctx.globalCompositeOperation = 'destination-in';
+    gctx.drawImage(base, 0, 0);
+    gctx.globalCompositeOperation = 'source-over';
+
+    ctx.drawImage(base, 0, 0);
+    ctx.drawImage(glow, 0, 0);
+    return out;
+  }
+
+  // Outer glow: remove inner area so halo stays mostly outside.
+  gctx.globalCompositeOperation = 'destination-out';
+  gctx.drawImage(base, 0, 0);
+  gctx.globalCompositeOperation = 'source-over';
+
   ctx.drawImage(glow, 0, 0);
+  ctx.drawImage(base, 0, 0);
   return out;
 }
 
@@ -389,11 +563,6 @@ function renderDarkGradientQR(info: QRMatrixInfo, cfg: GraphicConfig): HTMLCanva
   const ctx = out.getContext('2d');
   if (!ctx) return out;
 
-  if (!cfg.transparent_output) {
-    ctx.fillStyle = 'rgb(255 255 255)';
-    ctx.fillRect(0, 0, out.width, out.height);
-  }
-
   drawDataModules(
     ctx,
     info,
@@ -402,6 +571,9 @@ function renderDarkGradientQR(info: QRMatrixInfo, cfg: GraphicConfig): HTMLCanva
     cfg.gradient_end_rgb,
     cfg.gradient_mix_base_rgb,
     cfg.gradient_mix_ratio,
+    cfg.module_gradient_strength,
+    cfg.module_gradient_mode,
+    cfg.module_gradient_angle_deg,
   );
   drawFinderPatterns(ctx, info, cfg, cfg.finder_outer_rgb, cfg.finder_center_rgb);
   return out;
@@ -412,17 +584,17 @@ function renderFullDarkQR(info: QRMatrixInfo, cfg: GraphicConfig): HTMLCanvasEle
   const ctx = out.getContext('2d');
   if (!ctx) return out;
 
-  ctx.fillStyle = color4ToCss(cfg.background_rgba);
-  ctx.fillRect(0, 0, out.width, out.height);
-
   drawDataModules(
     ctx,
     info,
     cfg,
     cfg.gradient_start_rgb,
     cfg.gradient_end_rgb,
-    null,
-    0,
+    cfg.gradient_mix_base_rgb,
+    cfg.gradient_mix_ratio,
+    cfg.module_gradient_strength,
+    cfg.module_gradient_mode,
+    cfg.module_gradient_angle_deg,
   );
   drawFinderPatterns(ctx, info, cfg, cfg.finder_outer_rgb, cfg.finder_center_rgb);
   return out;
@@ -540,32 +712,176 @@ function buildMedallion(
   darkVariant: boolean,
 ): HTMLCanvasElement {
   const pad = Math.max(0, Math.round(canvasWidth * cfg.medallion_padding_ratio));
-  const bw = logo.width + 2 * pad;
-  const bh = logo.height + 2 * pad;
+  const shape = cfg.medallion_shape;
+  const baseW = logo.width + 2 * pad;
+  const baseH = logo.height + 2 * pad;
+  const side = Math.max(baseW, baseH);
+  const ellipseAngleDeg = clamp(cfg.medallion_ellipse_angle_deg, 0, 90);
+  const ellipseAngleRad = (ellipseAngleDeg * Math.PI) / 180;
+  const ellipseAspect = shape === 'ellipse' ? baseW / Math.max(1, baseH) : 1;
+
+  let bw = side;
+  let bh = side;
+  if (shape === 'rectangle') {
+    const rectW = clamp(cfg.medallion_rect_width_ratio, 0.6, 2.6);
+    const rectH = clamp(cfg.medallion_rect_height_ratio, 0.6, 2.6);
+    bw = Math.max(baseW, Math.round(side * rectW));
+    bh = Math.max(baseH, Math.round(side * rectH));
+  } else if (shape === 'ellipse') {
+    const rx = baseW / 2;
+    const ry = baseH / 2;
+    const rotW = 2 * Math.sqrt((rx * Math.cos(ellipseAngleRad)) ** 2 + (ry * Math.sin(ellipseAngleRad)) ** 2);
+    const rotH = 2 * Math.sqrt((rx * Math.sin(ellipseAngleRad)) ** 2 + (ry * Math.cos(ellipseAngleRad)) ** 2);
+    const safety = 8;
+    bw = Math.max(baseW, Math.ceil(rotW) + safety);
+    bh = Math.max(baseH, Math.ceil(rotH) + safety);
+  }
+
   const out = createCanvas(bw, bh);
   const ctx = out.getContext('2d');
   if (!ctx) return logo;
 
-  const radius = Math.max(18, Math.round(Math.min(bw, bh) * cfg.medallion_corner_ratio));
+  const cornerEnabled = shape === 'square' || shape === 'rectangle' || shape === 'diamond';
+  const radius = cornerEnabled ? Math.round(Math.min(bw, bh) * clamp01(cfg.medallion_corner_ratio)) : 0;
   const fill = darkVariant ? cfg.dark_medallion_fill_rgba : cfg.medallion_fill_rgba;
   const outline = darkVariant ? cfg.dark_medallion_outline_rgba : cfg.medallion_outline_rgba;
 
   ctx.fillStyle = color4ToCss(fill);
-  drawRoundedRect(ctx, 0, 0, bw, bh, radius);
+  drawMedallionShape(ctx, shape, 0, 0, bw, bh, radius, ellipseAngleDeg, ellipseAspect);
   ctx.fill();
 
   if (cfg.medallion_outline_width > 0) {
     ctx.strokeStyle = color4ToCss(outline);
     ctx.lineWidth = cfg.medallion_outline_width;
-    drawRoundedRect(ctx, 1, 1, bw - 2, bh - 2, radius);
+    const inset = Math.max(1, Math.ceil(cfg.medallion_outline_width / 2));
+    drawMedallionShape(
+      ctx,
+      shape,
+      inset,
+      inset,
+      Math.max(1, bw - 2 * inset),
+      Math.max(1, bh - 2 * inset),
+      Math.max(0, radius - inset),
+      ellipseAngleDeg,
+      ellipseAspect,
+    );
     ctx.stroke();
   }
 
-  if (cfg.medallion_highlight_enabled && !darkVariant) {
+  if (cfg.medallion_highlight_enabled) {
+    const innerX = 2;
+    const innerY = 2;
+    const innerW = Math.max(1, bw - 4);
+    const innerH = Math.max(1, bh - 4);
+    const innerRadius = Math.max(0, radius - 2);
     const hh = Math.max(1, Math.round(bh * cfg.medallion_highlight_height_ratio));
-    ctx.fillStyle = color4ToCss(cfg.medallion_highlight_rgba);
-    drawRoundedRect(ctx, 2, 2, bw - 4, hh, radius);
-    ctx.fill();
+    ctx.save();
+    drawMedallionShape(
+      ctx,
+      shape,
+      innerX,
+      innerY,
+      innerW,
+      innerH,
+      innerRadius,
+      ellipseAngleDeg,
+      ellipseAspect,
+    );
+    ctx.clip();
+    const c = cfg.medallion_highlight_rgba;
+    const maxAlpha = clamp01(c[3] / 255);
+
+    const fillShape = (x: number, y: number, w: number, h: number, r: number, alpha: number): void => {
+      if (w <= 0 || h <= 0 || alpha <= 0) return;
+      ctx.fillStyle = `rgba(${c[0]}, ${c[1]}, ${c[2]}, ${clamp01(alpha).toFixed(4)})`;
+      drawMedallionShape(ctx, shape, x, y, w, h, Math.max(0, r), ellipseAngleDeg, ellipseAspect);
+      ctx.fill();
+    };
+
+    if (cfg.medallion_highlight_mode === 'all') {
+      ctx.fillStyle = `rgba(${c[0]}, ${c[1]}, ${c[2]}, ${maxAlpha.toFixed(3)})`;
+      ctx.fillRect(innerX, innerY, innerW, innerH);
+    } else if (cfg.medallion_highlight_mode === 'bottom') {
+      const dir = shape === 'ellipse' ? ellipseAngleRad : 0;
+      const dx = Math.sin(dir);
+      const dy = Math.cos(dir);
+      const cx = bw / 2;
+      const cy = bh / 2;
+      const span = Math.max(bw, bh) * 1.4;
+      const ratio = clamp01(hh / span);
+      const grad = ctx.createLinearGradient(
+        cx - dx * (span / 2),
+        cy - dy * (span / 2),
+        cx + dx * (span / 2),
+        cy + dy * (span / 2),
+      );
+      grad.addColorStop(0, 'rgba(0, 0, 0, 0)');
+      grad.addColorStop(Math.max(0, 1 - ratio), 'rgba(0, 0, 0, 0)');
+      grad.addColorStop(Math.max(0, 1 - ratio * 0.75), `rgba(${c[0]}, ${c[1]}, ${c[2]}, ${(maxAlpha * 0.34).toFixed(3)})`);
+      grad.addColorStop(1, `rgba(${c[0]}, ${c[1]}, ${c[2]}, ${maxAlpha.toFixed(3)})`);
+      ctx.fillStyle = grad;
+      ctx.fillRect(innerX, innerY, innerW, innerH);
+    } else if (cfg.medallion_highlight_mode === 'radial_inner') {
+      const cx = bw / 2;
+      const cy = bh / 2;
+      const steps = 28;
+      for (let i = steps; i >= 1; i -= 1) {
+        const s = i / steps;
+        const w = innerW * s;
+        const h = innerH * s;
+        fillShape(
+          cx - w / 2,
+          cy - h / 2,
+          w,
+          h,
+          innerRadius * s,
+          maxAlpha / steps,
+        );
+      }
+    } else if (cfg.medallion_highlight_mode === 'radial_outer') {
+      const cx = bw / 2;
+      const cy = bh / 2;
+      const ringStrength = clamp01(cfg.medallion_highlight_height_ratio);
+      fillShape(innerX, innerY, innerW, innerH, innerRadius, maxAlpha);
+      ctx.globalCompositeOperation = 'destination-out';
+      const steps = 28;
+      for (let i = 1; i <= steps; i += 1) {
+        const t = i / steps;
+        const s = Math.max(0.02, 1 - ringStrength * t);
+        const w = innerW * s;
+        const h = innerH * s;
+        fillShape(
+          cx - w / 2,
+          cy - h / 2,
+          w,
+          h,
+          innerRadius * s,
+          1 / steps,
+        );
+      }
+      ctx.globalCompositeOperation = 'source-over';
+    } else {
+      const dir = shape === 'ellipse' ? ellipseAngleRad : 0;
+      const dx = Math.sin(dir);
+      const dy = Math.cos(dir);
+      const cx = bw / 2;
+      const cy = bh / 2;
+      const span = Math.max(bw, bh) * 1.4;
+      const ratio = clamp01(hh / span);
+      const grad = ctx.createLinearGradient(
+        cx - dx * (span / 2),
+        cy - dy * (span / 2),
+        cx + dx * (span / 2),
+        cy + dy * (span / 2),
+      );
+      grad.addColorStop(0, `rgba(${c[0]}, ${c[1]}, ${c[2]}, ${maxAlpha.toFixed(3)})`);
+      grad.addColorStop(Math.max(0, ratio * 0.75), `rgba(${c[0]}, ${c[1]}, ${c[2]}, ${(maxAlpha * 0.34).toFixed(3)})`);
+      grad.addColorStop(Math.max(0, ratio), `rgba(${c[0]}, ${c[1]}, ${c[2]}, 0)`);
+      grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(innerX, innerY, innerW, innerH);
+    }
+    ctx.restore();
   }
 
   ctx.drawImage(logo, Math.round((bw - logo.width) / 2), Math.round((bh - logo.height) / 2));
@@ -889,6 +1205,7 @@ export async function renderStyledQRCode(req: RenderRequest): Promise<RenderResu
     qrCore = await addCenterLogo(qrCore, cfg, req.logo, true, req.quietLogs);
     decodePrimary = qrCore;
     if (cfg.shadow_enabled) qrCore = applyShadow(qrCore, cfg);
+    qrCore = composeOnBackground(qrCore, cfg);
   } else if (cfg.style_mode === 'white_clean') {
     qrCore = renderDarkGradientQR(info, cfg);
     if (cfg.glow_enabled) qrCore = applyGlow(qrCore, cfg);

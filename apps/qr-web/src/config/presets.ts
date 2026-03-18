@@ -8,6 +8,22 @@ export const STYLE_MODE_VALUES: GraphicConfig['style_mode'][] = [
 
 export const MODULE_SHAPE_VALUES: GraphicConfig['module_shape'][] = ['square', 'rounded', 'dot'];
 export const FINDER_SHAPE_VALUES: GraphicConfig['finder_shape'][] = ['square', 'rounded', 'dot'];
+export const MODULE_GRADIENT_MODE_VALUES: GraphicConfig['module_gradient_mode'][] = ['linear', 'radial'];
+export const MEDALLION_SHAPE_VALUES: GraphicConfig['medallion_shape'][] = [
+  'square',
+  'rectangle',
+  'circle',
+  'ellipse',
+  'diamond',
+];
+export const MEDALLION_HIGHLIGHT_MODE_VALUES: GraphicConfig['medallion_highlight_mode'][] = [
+  'top',
+  'bottom',
+  'all',
+  'radial_inner',
+  'radial_outer',
+];
+export const GLOW_MODE_VALUES: GraphicConfig['glow_mode'][] = ['outer', 'inner'];
 
 export const DEFAULT_GRAPHIC_CONFIG: GraphicConfig = {
   style_mode: 'black_bg_safe',
@@ -18,8 +34,11 @@ export const DEFAULT_GRAPHIC_CONFIG: GraphicConfig = {
 
   gradient_start_rgb: [16, 72, 62],
   gradient_end_rgb: [36, 92, 132],
-  gradient_mix_base_rgb: [16, 21, 28],
+  gradient_mix_base_rgb: null,
   gradient_mix_ratio: 0.55,
+  module_gradient_strength: 1.0,
+  module_gradient_mode: 'linear',
+  module_gradient_angle_deg: 45,
   module_shape: 'square',
   module_scale: 1.0,
   module_corner_ratio: 0.35,
@@ -44,12 +63,17 @@ export const DEFAULT_GRAPHIC_CONFIG: GraphicConfig = {
   recolor_logo_end_rgb: [70, 120, 165],
 
   medallion_enabled: true,
+  medallion_shape: 'square',
+  medallion_rect_width_ratio: 1.35,
+  medallion_rect_height_ratio: 1.0,
+  medallion_ellipse_angle_deg: 0,
   medallion_padding_ratio: 0.018,
   medallion_fill_rgba: [250, 251, 252, 255],
   medallion_outline_rgba: [228, 232, 238, 255],
   medallion_outline_width: 2,
   medallion_corner_ratio: 0.22,
   medallion_highlight_enabled: false,
+  medallion_highlight_mode: 'top',
   medallion_highlight_rgba: [255, 255, 255, 36],
   medallion_highlight_height_ratio: 0.42,
 
@@ -66,6 +90,7 @@ export const DEFAULT_GRAPHIC_CONFIG: GraphicConfig = {
   shadow_canvas_padding: 40,
 
   glow_enabled: false,
+  glow_mode: 'outer',
   glow_fill_rgba: [40, 130, 120, 18],
   glow_blur_radius: 40,
   glow_inset: 80,
@@ -76,6 +101,7 @@ export const PRESET_OVERRIDES: Record<string, Partial<GraphicConfig>> = {
     style_mode: 'black_bg_safe',
     background_rgba: [8, 10, 14, 255],
     plate_color_rgba: [255, 255, 255, 255],
+    gradient_mix_base_rgb: null,
     outer_plate_enabled: true,
     shadow_enabled: true,
     glow_enabled: false,
@@ -90,6 +116,7 @@ export const PRESET_OVERRIDES: Record<string, Partial<GraphicConfig>> = {
     background_rgba: [8, 10, 14, 255],
     gradient_start_rgb: [214, 240, 236],
     gradient_end_rgb: [90, 180, 200],
+    gradient_mix_base_rgb: null,
     finder_outer_rgb: [232, 248, 245],
     finder_center_rgb: [170, 220, 228],
     outer_plate_enabled: false,
@@ -103,6 +130,7 @@ export const PRESET_OVERRIDES: Record<string, Partial<GraphicConfig>> = {
   white_clean: {
     style_mode: 'white_clean',
     background_rgba: [255, 255, 255, 255],
+    gradient_mix_base_rgb: null,
     outer_plate_enabled: false,
     shadow_enabled: false,
     glow_enabled: false,
@@ -117,7 +145,7 @@ export const PRESET_OVERRIDES: Record<string, Partial<GraphicConfig>> = {
     plate_color_rgba: [247, 239, 225, 255],
     gradient_start_rgb: [123, 88, 25],
     gradient_end_rgb: [197, 152, 67],
-    gradient_mix_base_rgb: [40, 28, 11],
+    gradient_mix_base_rgb: null,
     gradient_mix_ratio: 0.4,
     finder_outer_rgb: [65, 48, 20],
     finder_center_rgb: [209, 167, 85],
@@ -134,7 +162,7 @@ export const PRESET_OVERRIDES: Record<string, Partial<GraphicConfig>> = {
     background_rgba: [246, 240, 233, 255],
     gradient_start_rgb: [98, 118, 107],
     gradient_end_rgb: [177, 144, 121],
-    gradient_mix_base_rgb: [58, 65, 60],
+    gradient_mix_base_rgb: null,
     gradient_mix_ratio: 0.45,
     finder_outer_rgb: [77, 88, 82],
     finder_center_rgb: [165, 124, 100],
@@ -216,6 +244,14 @@ export function applyGraphicOverrides(
   }
   if (!('finder_center_rgb' in normalizedOverrides) && 'full_dark_finder_center_rgb' in normalizedOverrides) {
     normalizedOverrides.finder_center_rgb = normalizedOverrides.full_dark_finder_center_rgb;
+  }
+
+  // Legacy medallion shapes removed in V4.
+  if (normalizedOverrides.medallion_shape === 'rounded') {
+    normalizedOverrides.medallion_shape = 'square';
+  }
+  if (normalizedOverrides.medallion_shape === 'heart') {
+    normalizedOverrides.medallion_shape = 'diamond';
   }
 
   const next = deepClone(base);

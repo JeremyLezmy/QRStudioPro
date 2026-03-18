@@ -461,6 +461,14 @@ input[type='range']::-moz-range-thumb {
   font-size: 0.73rem;
 }
 
+.param-row.is-disabled {
+  opacity: 0.34;
+}
+
+.param-row.is-disabled .field-control {
+  pointer-events: none;
+}
+
 .field-control {
   min-width: 0;
 }

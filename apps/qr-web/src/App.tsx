@@ -3,7 +3,11 @@ import {
   BUILTIN_LOGOS,
   DEFAULT_GRAPHIC_CONFIG,
   FINDER_SHAPE_VALUES,
+  GLOW_MODE_VALUES,
   LOGO_RECOMMENDED_PRESET,
+  MEDALLION_HIGHLIGHT_MODE_VALUES,
+  MEDALLION_SHAPE_VALUES,
+  MODULE_GRADIENT_MODE_VALUES,
   MODULE_SHAPE_VALUES,
   applyGraphicOverrides,
   getPresetDisplayName,
@@ -61,6 +65,44 @@ const PRESET_RECOMMENDED_LOGO: Partial<Record<string, Exclude<LogoLibraryChoice,
   full_dark_artistic: 'Phusis',
   luxury: 'Phusis',
   pena_psychologue: 'Romane Pena',
+};
+
+const MODULE_SHAPE_LABELS: Record<GraphicConfig['module_shape'], string> = {
+  square: 'Carré',
+  rounded: 'Arrondi',
+  dot: 'Point',
+};
+
+const FINDER_SHAPE_LABELS: Record<GraphicConfig['finder_shape'], string> = {
+  square: 'Carré',
+  rounded: 'Arrondi',
+  dot: 'Point',
+};
+
+const MEDALLION_SHAPE_LABELS: Record<GraphicConfig['medallion_shape'], string> = {
+  square: 'Carré',
+  rectangle: 'Rectangle',
+  circle: 'Rond',
+  ellipse: 'Ellipse',
+  diamond: 'Losange',
+};
+
+const MODULE_GRADIENT_MODE_LABELS: Record<GraphicConfig['module_gradient_mode'], string> = {
+  linear: 'Linéaire',
+  radial: 'Radial',
+};
+
+const MEDALLION_HIGHLIGHT_MODE_LABELS: Record<GraphicConfig['medallion_highlight_mode'], string> = {
+  top: 'Haut',
+  bottom: 'Bas',
+  all: 'Complet',
+  radial_inner: 'Radial interne',
+  radial_outer: 'Radial externe',
+};
+
+const GLOW_MODE_LABELS: Record<GraphicConfig['glow_mode'], string> = {
+  outer: 'Externe',
+  inner: 'Interne',
 };
 
 function deepClone<T>(value: T): T {
@@ -712,7 +754,81 @@ export default function App() {
   const maxWidthDisabled = outputFormat === 'svg';
   const selectedPresetIsCustom = Boolean(customPresets[presetName]);
   const editorTabs: EditorTab[] = ['Project', 'Logo', 'Output', 'Graphic'];
-  const activeGroupSpecs = groupedSpecs[activeGraphicGroup] ?? [];
+  const medallionCornerEnabled = ['square', 'rectangle', 'diamond'].includes(graphic.medallion_shape);
+
+  const isFieldDisabled = useCallback(
+    (spec: FieldSpec): boolean => {
+      if (spec.key === 'module_gradient_angle_deg') {
+        return graphic.module_gradient_mode !== 'linear';
+      }
+      if (spec.key === 'medallion_rect_width_ratio' || spec.key === 'medallion_rect_height_ratio') {
+        return graphic.medallion_shape !== 'rectangle';
+      }
+      if (spec.key === 'medallion_ellipse_angle_deg') {
+        return graphic.medallion_shape !== 'ellipse';
+      }
+      if (spec.key === 'medallion_corner_ratio') {
+        return !medallionCornerEnabled;
+      }
+      if (
+        spec.key === 'medallion_highlight_mode' ||
+        spec.key === 'medallion_highlight_height_ratio' ||
+        spec.key === 'medallion_highlight_rgba'
+      ) {
+        return !graphic.medallion_highlight_enabled;
+      }
+      if (
+        spec.key === 'glow_mode' ||
+        spec.key === 'glow_fill_rgba' ||
+        spec.key === 'glow_blur_radius' ||
+        spec.key === 'glow_inset'
+      ) {
+        return !graphic.glow_enabled;
+      }
+      return false;
+    },
+    [
+      graphic.glow_enabled,
+      graphic.medallion_highlight_enabled,
+      graphic.medallion_shape,
+      graphic.module_gradient_mode,
+      medallionCornerEnabled,
+    ],
+  );
+
+  const isFieldVisible = useCallback(
+    (spec: FieldSpec): boolean => {
+      if (spec.key === 'module_gradient_angle_deg') {
+        return graphic.module_gradient_mode === 'linear';
+      }
+      if (spec.group !== 'Medallion') return true;
+      if (spec.key === 'medallion_rect_width_ratio' || spec.key === 'medallion_rect_height_ratio') {
+        return graphic.medallion_shape === 'rectangle';
+      }
+      if (spec.key === 'medallion_ellipse_angle_deg') {
+        return graphic.medallion_shape === 'ellipse';
+      }
+      if (spec.key === 'medallion_corner_ratio') {
+        return medallionCornerEnabled;
+      }
+      if (spec.key === 'medallion_highlight_height_ratio') {
+        return (
+          graphic.medallion_highlight_enabled &&
+          graphic.medallion_highlight_mode !== 'all'
+        );
+      }
+      return true;
+    },
+    [
+      graphic.medallion_highlight_enabled,
+      graphic.medallion_highlight_mode,
+      graphic.medallion_shape,
+      graphic.module_gradient_mode,
+      medallionCornerEnabled,
+    ],
+  );
+
+  const activeGroupSpecs = (groupedSpecs[activeGraphicGroup] ?? []).filter(isFieldVisible);
 
   const renderNumericField = (spec: FieldSpec) => {
     const key = spec.key;
@@ -720,8 +836,10 @@ export default function App() {
     const numericValue = typeof rawValue === 'number' ? rawValue : 0;
     const isInt = spec.type === 'int';
     const step = spec.step ?? (isInt ? 1 : 0.01);
+    const disabled = isFieldDisabled(spec);
 
     const updateFromString = (nextRaw: string) => {
+      if (disabled) return;
       const parsed = parseNumberInput(nextRaw);
       if (parsed === null) return;
 
@@ -744,6 +862,7 @@ export default function App() {
             max={spec.max}
             step={step}
             value={numericValue}
+            disabled={disabled}
             onChange={(event) => updateFromString(event.target.value)}
           />
         ) : null}
@@ -753,6 +872,7 @@ export default function App() {
           max={spec.max}
           step={step}
           value={numericValue}
+          disabled={disabled}
           onChange={(event) => updateFromString(event.target.value)}
         />
       </div>
@@ -859,7 +979,20 @@ export default function App() {
         >
           {MODULE_SHAPE_VALUES.map((shape) => (
             <option key={shape} value={shape}>
-              {shape}
+              {MODULE_SHAPE_LABELS[shape]}
+            </option>
+          ))}
+        </select>
+      );
+    }
+
+    if (spec.type === 'module_gradient_mode') {
+      const current = value as GraphicConfig['module_gradient_mode'];
+      return (
+        <select value={current} onChange={(event) => setGraphicField(key, event.target.value as GraphicConfig[typeof key])}>
+          {MODULE_GRADIENT_MODE_VALUES.map((mode) => (
+            <option key={mode} value={mode}>
+              {MODULE_GRADIENT_MODE_LABELS[mode]}
             </option>
           ))}
         </select>
@@ -872,7 +1005,46 @@ export default function App() {
         <select value={current} onChange={(event) => setGraphicField(key, event.target.value as GraphicConfig[typeof key])}>
           {FINDER_SHAPE_VALUES.map((shape) => (
             <option key={shape} value={shape}>
-              {shape}
+              {FINDER_SHAPE_LABELS[shape]}
+            </option>
+          ))}
+        </select>
+      );
+    }
+
+    if (spec.type === 'medallion_shape') {
+      const current = value as GraphicConfig['medallion_shape'];
+      return (
+        <select value={current} onChange={(event) => setGraphicField(key, event.target.value as GraphicConfig[typeof key])}>
+          {MEDALLION_SHAPE_VALUES.map((shape) => (
+            <option key={shape} value={shape}>
+              {MEDALLION_SHAPE_LABELS[shape]}
+            </option>
+          ))}
+        </select>
+      );
+    }
+
+    if (spec.type === 'medallion_highlight_mode') {
+      const current = value as GraphicConfig['medallion_highlight_mode'];
+      return (
+        <select value={current} onChange={(event) => setGraphicField(key, event.target.value as GraphicConfig[typeof key])}>
+          {MEDALLION_HIGHLIGHT_MODE_VALUES.map((mode) => (
+            <option key={mode} value={mode}>
+              {MEDALLION_HIGHLIGHT_MODE_LABELS[mode]}
+            </option>
+          ))}
+        </select>
+      );
+    }
+
+    if (spec.type === 'glow_mode') {
+      const current = value as GraphicConfig['glow_mode'];
+      return (
+        <select value={current} onChange={(event) => setGraphicField(key, event.target.value as GraphicConfig[typeof key])}>
+          {GLOW_MODE_VALUES.map((mode) => (
+            <option key={mode} value={mode}>
+              {GLOW_MODE_LABELS[mode]}
             </option>
           ))}
         </select>
@@ -1272,7 +1444,10 @@ export default function App() {
 
                   <fieldset>
                     {activeGroupSpecs.map((spec) => (
-                      <div className="param-row" key={String(spec.key)}>
+                      <div
+                        className={`param-row ${isFieldDisabled(spec) ? 'is-disabled' : ''}`}
+                        key={String(spec.key)}
+                      >
                         <label title={spec.description}>
                           <span>{spec.label}</span>
                           <small>ⓘ</small>
