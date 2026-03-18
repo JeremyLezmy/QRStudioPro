@@ -29,6 +29,14 @@ npm run build
 npm run preview
 ```
 
+## GitHub Pages
+
+Workflow dédié: `.github/workflows/webapp-pages.yml`
+
+- Déclenchement automatique sur `push` vers `main` si des fichiers `apps/qr-web/**` changent.
+- Déploiement manuel possible via `workflow_dispatch`.
+- Le `base path` Vite est injecté via `VITE_BASE_PATH=/<repo>/` pendant le build CI.
+
 ## Notes
 
 - Le rendu SVG exporté est un SVG QR vectoriel propre (sans effets raster), fidèle au comportement Python.

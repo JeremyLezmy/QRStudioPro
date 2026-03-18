@@ -168,8 +168,6 @@ export default function App() {
   const [decodeCheck, setDecodeCheck] = useState(true);
   const [quietLogs, setQuietLogs] = useState(false);
 
-  const [previewRatio, setPreviewRatio] = useState(38);
-
   const [outputFormat, setOutputFormat] = useState<OutputFormat>('auto');
   const [outputFilename, setOutputFilename] = useState('qr_output.png');
   const [outputQuality, setOutputQuality] = useState(92);
@@ -510,6 +508,44 @@ export default function App() {
     void runRender(true);
   }, [runRender]);
 
+  const onResetAll = useCallback(() => {
+    const resetPreset = BUILTIN_PRESET_NAMES.includes(initialPreset) ? initialPreset : 'black_bg_safe';
+
+    setUrl(DEFAULT_URL);
+    setPresetName(resetPreset);
+    setGraphic(getPresetGraphicConfig(resetPreset));
+
+    setLogoChoice(initialLogoChoice);
+    setCustomLogoDataUrl(null);
+    setCustomLogoUrl('');
+    setCustomLogoName('');
+
+    setBoxSize(22);
+    setBorder(4);
+
+    setAutoPreview(true);
+    setDecodeCheck(true);
+    setQuietLogs(false);
+
+    setOutputFormat('auto');
+    setOutputFilename('qr_output.png');
+    setOutputQuality(92);
+    setOutputMaxWidth('');
+
+    setActiveEditorTab('Project');
+    setActiveGraphicGroup('General');
+    setMobilePreviewOpen(false);
+
+    setPreviewSrc('');
+    setPreviewMeta(null);
+    setIsRendering(false);
+    renderSequenceRef.current += 1;
+    renderedCanvasRef.current = null;
+    renderedSignatureRef.current = '';
+
+    setStatus({ text: 'Paramètres réinitialisés.', tone: 'info' });
+  }, [initialLogoChoice, initialPreset]);
+
   const onOpenMobilePreview = useCallback(() => {
     setMobilePreviewOpen(true);
     if (!renderedCanvasRef.current || renderedSignatureRef.current !== renderSignature) {
@@ -836,10 +872,13 @@ export default function App() {
             <input type="checkbox" checked={quietLogs} onChange={(event) => setQuietLogs(event.target.checked)} />
             <span>Quiet logs</span>
           </label>
+          <button type="button" className="reset-btn" onClick={onResetAll}>
+            Reset
+          </button>
         </div>
       </header>
 
-      <main className="content-grid" style={{ gridTemplateColumns: `${100 - previewRatio}% ${previewRatio}%` }}>
+      <main className="content-grid desktop-layout">
         <section className="left-column">
           <article className="card section-tabs-card">
             <div className="section-tabs" role="tablist" aria-label="Sections de paramétrage">
@@ -1134,26 +1173,22 @@ export default function App() {
           <article className="card sticky preview-card">
             <div className="preview-header">
               <h2>Live Preview</h2>
-              <div className="preview-actions">
-                <button type="button" onClick={onPreviewClick} disabled={isRendering}>
-                  {isRendering ? 'Rendering...' : 'Preview'}
-                </button>
-                <button type="button" onClick={onExportClick} className="primary" disabled={isRendering}>
-                  Export QR
-                </button>
-              </div>
             </div>
 
-            <div className="split-control">
-              <span>Preview width</span>
-              <input
-                type="range"
-                min={26}
-                max={60}
-                value={previewRatio}
-                onChange={(event) => setPreviewRatio(Math.round(Number(event.target.value)))}
-              />
-              <strong>{previewRatio}%</strong>
+            <button type="button" onClick={onPreviewClick} disabled={isRendering} className="preview-line-btn">
+              {isRendering ? 'Rendering...' : 'Preview'}
+            </button>
+            <button
+              type="button"
+              onClick={onExportClick}
+              className="primary preview-line-btn"
+              disabled={isRendering}
+            >
+              Export QR
+            </button>
+
+            <div className="preview-width-note">
+              Preview width fixed at 30%
             </div>
 
             <div className="preview-stage">
@@ -1184,7 +1219,11 @@ export default function App() {
         </aside>
       </main>
 
-      <button type="button" className="mobile-preview-fab" onClick={onOpenMobilePreview}>
+      <button
+        type="button"
+        className={`mobile-preview-fab ${mobilePreviewOpen ? 'is-hidden' : ''}`}
+        onClick={onOpenMobilePreview}
+      >
         Preview
       </button>
 
